@@ -1,0 +1,23 @@
+name: data-platform
+
+services:
+  warehouse-db:
+    image: postgres:18.6
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${WAREHOUSE_DB_USER:-admin}
+      POSTGRES_PASSWORD: ${WAREHOUSE_DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${WAREHOUSE_DB_NAME:-warehouse}
+    ports:
+      - "127.0.0.1:${WAREHOUSE_DB_PORT:-5432}:5432"
+    volumes:
+      - warehouse_db_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  warehouse_db_data:

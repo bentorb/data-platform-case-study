@@ -30,6 +30,17 @@ x-airflow-common: &airflow-common
     airflow-db:
       condition: service_healthy
 
+# Settings shared by the landing zone's one-off jobs.
+x-landing-zone-job: &landing-zone-job
+  build: ./landing-zone
+  image: data-platform-landing-jobs:local
+  environment:
+    LANDING_ZONE_ENDPOINT_URL: http://landing-zone-storage:9000
+    LANDING_ZONE_ACCESS_KEY: ${LANDING_ZONE_ACCESS_KEY:-rustfsadmin}
+    LANDING_ZONE_SECRET_KEY: ${LANDING_ZONE_SECRET_KEY:-rustfsadmin}
+    LANDING_ZONE_BUCKET: landing
+  restart: "no"
+
 services:
   warehouse-db:
     image: postgres:18.6
@@ -52,6 +63,46 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+
+  # S3-compatible landing zone where source files are delivered.
+  landing-zone-storage:
+    image: rustfs/rustfs:1.0.1
+    restart: unless-stopped
+    environment:
+      RUSTFS_ACCESS_KEY: ${LANDING_ZONE_ACCESS_KEY:-rustfsadmin}
+      RUSTFS_SECRET_KEY: ${LANDING_ZONE_SECRET_KEY:-rustfsadmin}
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_CONSOLE_ADDRESS: 0.0.0.0:9001
+    ports:
+      - "127.0.0.1:${LANDING_ZONE_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - landing_zone_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # One-off: creates the landing bucket.
+  landing-zone-init:
+    <<: *landing-zone-job
+    command: ["/opt/landing-zone/init/01_create_bucket.py"]
+    depends_on:
+      landing-zone-storage:
+        condition: service_healthy
+
+  # One-off: simulates an upstream system delivering the files in data/.
+  # Not part of the platform; in production the source system delivers the files.
+  landing-zone-upload:
+    <<: *landing-zone-job
+    command: ["/opt/landing-zone/simulation/upload_files.py"]
+    volumes:
+      - ./data:/data:ro
+    depends_on:
+      landing-zone-init:
+        condition: service_completed_successfully
 
   airflow-db:
     image: postgres:18.6
@@ -130,3 +181,4 @@ volumes:
   warehouse_db_data:
   airflow_db_data:
   airflow_logs:
+  landing_zone_data:

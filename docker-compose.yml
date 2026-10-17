@@ -8,10 +8,15 @@ services:
       POSTGRES_USER: ${WAREHOUSE_DB_USER:-admin}
       POSTGRES_PASSWORD: ${WAREHOUSE_DB_PASSWORD:-postgres}
       POSTGRES_DB: ${WAREHOUSE_DB_NAME:-warehouse}
+      
+      WAREHOUSE_INGESTION_PASSWORD: ${WAREHOUSE_INGESTION_PASSWORD:-ingestion}
+      WAREHOUSE_TRANSFORMATION_PASSWORD: ${WAREHOUSE_TRANSFORMATION_PASSWORD:-transformation}
+      WAREHOUSE_ANALYTICS_PASSWORD: ${WAREHOUSE_ANALYTICS_PASSWORD:-analytics}
     ports:
       - "127.0.0.1:${WAREHOUSE_DB_PORT:-5432}:5432"
     volumes:
       - warehouse_db_data:/var/lib/postgresql
+      - ./warehouse-db/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s

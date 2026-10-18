@@ -2,7 +2,8 @@ name: data-platform
 
 # Settings shared by every Airflow service.
 x-airflow-common: &airflow-common
-  image: apache/airflow:3.3.2
+  build: ./airflow
+  image: data-platform-airflow:local
   environment: &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
@@ -14,6 +15,16 @@ x-airflow-common: &airflow-common
     AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:-local-dev-jwt-secret}
     AIRFLOW__API_AUTH__JWT_ISSUER: airflow
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
+    # Makes the framework code in lib/ importable from DAGs (`from lib... import ...`).
+    PYTHONPATH: /opt/data-platform
+    # Landing zone (S3-compatible) read by ingestion tasks (conn_id: landing_zone_s3).
+    AIRFLOW_CONN_LANDING_ZONE_S3: >-
+      {"conn_type": "aws",
+       "login": "${LANDING_ZONE_ACCESS_KEY:-rustfsadmin}",
+       "password": "${LANDING_ZONE_SECRET_KEY:-rustfsadmin}",
+       "extra": {"endpoint_url": "http://landing-zone-storage:9000",
+                 "region_name": "eu-south-2",
+                 "config_kwargs": {"s3": {"addressing_style": "path"}}}}
     # Warehouse connection used by ingestion tasks (conn_id: warehouse_ingestion).
     AIRFLOW_CONN_WAREHOUSE_INGESTION: >-
       {"conn_type": "postgres",
@@ -24,6 +35,7 @@ x-airflow-common: &airflow-common
        "password": "${WAREHOUSE_INGESTION_PASSWORD:-ingestion}"}
   volumes:
     - ./airflow/dags:/opt/airflow/dags
+    - ./lib:/opt/data-platform/lib:ro
     - airflow_logs:/opt/airflow/logs
   restart: unless-stopped
   depends_on: &airflow-common-depends-on

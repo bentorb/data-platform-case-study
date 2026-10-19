@@ -19,7 +19,8 @@ models:
     description: >
       Customer transactions, one row per transaction. Only transactions that passed
       every staging check are included; rejected ones stay in
-      stg_customer_transactions with their dq_errors.
+      stg_customer_transactions with their dq_errors. Built incrementally from the
+      loads since the last run; a file delivered again replaces its earlier rows.
     columns:
       - name: transaction_id
         description: Identifier of the transaction.

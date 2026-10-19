@@ -1,7 +1,16 @@
 sources:
   - name: raw
-    description: Data exactly as loaded by ingestion. All columns are text.
+    description: >
+      Data exactly as loaded by ingestion. Source columns are text; ingestion adds
+      the lineage columns (prefixed with _) to every table.
     schema: raw
     tables:
       - name: customer_transactions
         description: Customer transactions loaded from the landing zone.
+        columns:
+          - name: _source_file
+            description: URI of the file the row was loaded from.
+          - name: _source_row
+            description: Position of the row in the source file, starting at 1.
+          - name: _loaded_at
+            description: When the row was loaded; shared by all rows of one load.

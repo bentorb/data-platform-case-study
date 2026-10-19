@@ -9,5 +9,8 @@ select
     product_name,
     quantity,
     price,
-    tax
+    tax,
+    _source_file,
+    _source_row,
+    _loaded_at
 from {{ source('raw', 'customer_transactions') }}

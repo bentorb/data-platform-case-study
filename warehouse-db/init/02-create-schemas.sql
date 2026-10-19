@@ -5,6 +5,8 @@
 -- :"DBNAME" is a psql variable holding the current database name.
 REVOKE ALL ON DATABASE :"DBNAME" FROM PUBLIC;
 GRANT CONNECT ON DATABASE :"DBNAME" TO ingestion, transformation, analytics;
+-- Ingestion stages each file in a temporary table before inserting it into raw.
+GRANT TEMPORARY ON DATABASE :"DBNAME" TO ingestion;
 
 -- Nothing should live in the default public schema.
 REVOKE ALL ON SCHEMA public FROM PUBLIC;

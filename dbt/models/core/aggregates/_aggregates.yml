@@ -1,0 +1,70 @@
+models:
+  - name: agg_daily_sales
+    description: >
+      Sales per day, from fct_transactions, with the share of the day's transactions
+      that passed data-quality checks.
+    columns:
+      - name: transaction_date
+        description: Day of the transactions.
+      - name: transactions
+        description: Number of transactions.
+      - name: units
+        description: Units sold.
+      - name: customers
+        description: Distinct customers.
+      - name: net_amount
+        description: Sales before tax.
+      - name: tax_amount
+        description: Tax.
+      - name: gross_amount
+        description: Sales including tax.
+      - name: rejected_transactions
+        description: Transactions of the day rejected in staging, so missing from the figures above.
+      - name: completeness
+        description: transactions / (transactions + rejected_transactions), from 0 to 1.
+
+  - name: agg_product_sales
+    description: Sales per product, from fct_transactions.
+    columns:
+      - name: product_id
+        description: Identifier of the product.
+      - name: product_name
+        description: Name of the product, from dim_products.
+      - name: transactions
+        description: Number of transactions.
+      - name: units
+        description: Units sold.
+      - name: customers
+        description: Distinct customers who bought the product.
+      - name: net_amount
+        description: Sales before tax.
+      - name: gross_amount
+        description: Sales including tax.
+      - name: avg_unit_price
+        description: net_amount / units, i.e. the average price weighted by units.
+      - name: first_sale_date
+        description: Date of the first sale.
+      - name: last_sale_date
+        description: Date of the most recent sale.
+
+  - name: agg_customer_sales
+    description: Sales per customer, from fct_transactions.
+    columns:
+      - name: customer_id
+        description: Identifier of the customer.
+      - name: transactions
+        description: Number of transactions.
+      - name: units
+        description: Units bought.
+      - name: products
+        description: Distinct products bought.
+      - name: net_amount
+        description: Spend before tax.
+      - name: gross_amount
+        description: Spend including tax.
+      - name: avg_transaction_value
+        description: gross_amount / transactions.
+      - name: first_transaction_date
+        description: Date of the first transaction.
+      - name: last_transaction_date
+        description: Date of the most recent transaction.

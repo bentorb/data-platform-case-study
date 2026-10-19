@@ -13,7 +13,8 @@ import logging
 
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.sdk import ObjectStoragePath
-from psycopg import sql
+from airflow.sdk.exceptions import AirflowFailException
+from psycopg import DataError, sql
 
 from lib.ingestion import load_log
 
@@ -49,6 +50,10 @@ def load_csv(
     the file, the load time and the load's entry in audit.load_log, where every
     attempt is logged. The file is streamed into COPY in chunks, so memory use
     does not grow with file size. Returns the number of rows loaded.
+
+    A file whose data cannot be loaded (e.g. a malformed CSV) raises
+    AirflowFailException, so the task fails without retrying; other errors are raised
+    as they are and retried.
     """
     schema, name = table.split(".")
     table_id = sql.Identifier(schema, name)
@@ -127,6 +132,10 @@ def load_csv(
                 load_log.succeed(cur, load_id, rows_loaded=rows, rows_replaced=replaced)
     except Exception as error:
         load_log.fail(hook, load_id, error)
+        if isinstance(error, DataError):
+            # Bad data (e.g. a malformed CSV) fails the same way on every attempt:
+            # fail the task without retrying.
+            raise AirflowFailException(f"Invalid data in {source_uri}: {error}") from error
         raise
 
     log.info(

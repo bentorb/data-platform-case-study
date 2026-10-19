@@ -5,6 +5,7 @@ import pendulum
 from airflow.sdk import dag, task
 
 from lib.ingestion.object_storage_to_postgres import load_csv
+from lib.orchestration.defaults import DEFAULT_ARGS
 from lib.transformation.dbt import build_dbt_task_group
 
 
@@ -15,6 +16,7 @@ from lib.transformation.dbt import build_dbt_task_group
     start_date=pendulum.datetime(2026, 1, 1, tz="UTC"),
     catchup=False,
     max_active_runs=1,  # dbt cannot rebuild the same model concurrently
+    default_args=DEFAULT_ARGS,
     tags=["customer_transactions", "ingestion", "dbt"],
 )
 def customer_transactions_pipeline():

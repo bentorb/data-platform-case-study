@@ -4,18 +4,20 @@ description: Loads customer transactions from the landing zone into the warehous
 owner: data-platform
 schedule: "@daily"
 start_date: 2026-01-01
-source:
-  conn_id: landing_zone_s3
-  uri: s3://landing/customer_transactions.csv
-target:
-  conn_id: warehouse_ingestion
-  table: raw.customer_transactions
-columns:
-  - transaction_id
-  - customer_id
-  - transaction_date
-  - product_id
-  - product_name
-  - quantity
-  - price
-  - tax
+ingestion:
+  source:
+    conn_id: landing_zone_s3
+    uri: s3://landing/customer_transactions.csv
+  target:
+    conn_id: warehouse_ingestion
+    table: raw.customer_transactions
+  columns:
+    - transaction_id
+    - customer_id
+    - transaction_date
+    - product_id
+    - product_name
+    - quantity
+    - price
+    - tax
+# No transformation section: runs the dbt models built from the target table.

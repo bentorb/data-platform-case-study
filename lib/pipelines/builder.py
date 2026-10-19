@@ -1,5 +1,5 @@
 """Builds a pipeline's Airflow DAG from its config (pipelines/<name>.yml): a task that
-loads the source file into the target table, followed by the dbt models.
+loads the source file into the target table, followed by the pipeline's dbt models.
 
 Each pipeline has its own DAG file calling build_pipeline, so a broken config only
 breaks that pipeline's DAG.
@@ -19,6 +19,10 @@ from lib.transformation.dbt import build_dbt_task_group
 def build_pipeline(name: str) -> DAG:
     """Returns the DAG of the pipeline `name`, with dag_id <name>_pipeline."""
     config = load_config(name)
+    ingestion = config.ingestion
+    # By default, the models built from the target table: its dbt source is named
+    # after its schema (e.g. source('raw', 'customer_transactions')).
+    select = config.transformation.select or [f"source:{ingestion.target.table}+"]
 
     @dag(
         dag_id=f"{name}_pipeline",
@@ -35,16 +39,16 @@ def build_pipeline(name: str) -> DAG:
         tags=[name, "ingestion", "dbt"],
     )
     def pipeline():
-        @task(task_id=f"load_{config.target.table.replace('.', '_')}")
+        @task(task_id=f"load_{ingestion.target.table.replace('.', '_')}")
         def load() -> int:
             return load_csv(
-                source_uri=config.source.uri,
-                source_conn_id=config.source.conn_id,
-                postgres_conn_id=config.target.conn_id,
-                table=config.target.table,
-                columns=config.columns,
+                source_uri=ingestion.source.uri,
+                source_conn_id=ingestion.source.conn_id,
+                postgres_conn_id=ingestion.target.conn_id,
+                table=ingestion.target.table,
+                columns=ingestion.columns,
             )
 
-        load() >> build_dbt_task_group()
+        load() >> build_dbt_task_group(select=select)
 
     return pipeline()

@@ -4,8 +4,14 @@ models:
     columns:
       - name: product_id
         description: Identifier of the product.
+        data_type: integer
+        constraints:
+          - type: primary_key
       - name: product_name
         description: Name of the product, as of its most recent transaction.
+        data_type: text
+        constraints:
+          - type: not_null
 
   - name: fct_transactions
     description: >
@@ -15,27 +21,66 @@ models:
     columns:
       - name: transaction_id
         description: Identifier of the transaction.
+        data_type: integer
+        constraints:
+          - type: primary_key
       - name: transaction_date
         description: Date of the transaction.
+        data_type: date
+        constraints:
+          - type: not_null
       - name: customer_id
         description: Identifier of the customer.
+        data_type: integer
+        constraints:
+          - type: not_null
       - name: product_id
         description: Product sold; see dim_products.
+        data_type: integer
+        constraints:
+          - type: not_null
       - name: quantity
         description: Number of units.
+        data_type: integer
+        constraints:
+          - type: not_null
       - name: unit_price
         description: Price of one unit, before tax.
+        data_type: numeric(12,2)
+        constraints:
+          - type: not_null
       - name: unit_tax
         description: Tax on one unit (assumed per unit; the source does not say).
+        data_type: numeric(12,2)
+        constraints:
+          - type: not_null
       - name: net_amount
         description: quantity × unit_price.
+        data_type: numeric(14,2)
+        constraints:
+          - type: not_null
       - name: tax_amount
         description: quantity × unit_tax.
+        data_type: numeric(14,2)
+        constraints:
+          - type: not_null
       - name: gross_amount
         description: net_amount + tax_amount.
+        data_type: numeric(14,2)
+        constraints:
+          - type: not_null
       - name: _load_id
         description: The load's entry in audit.load_log.
+        data_type: bigint
+        constraints:
+          - type: not_null
       - name: _source_file
         description: URI of the file the transaction was loaded from.
+        data_type: text
+        constraints:
+          - type: not_null
       - name: _source_row
         description: Position of the transaction in the source file.
+        data_type: bigint
+        constraints:
+          - type: not_null

@@ -1,3 +1,5 @@
+# Sums use numeric(16,2), wider than the fact's numeric(14,2): a total over many
+# transactions can exceed any single one.
 models:
   - name: agg_daily_sales
     description: >
@@ -6,65 +8,149 @@ models:
     columns:
       - name: transaction_date
         description: Day of the transactions.
+        data_type: date
+        constraints:
+          - type: primary_key
       - name: transactions
         description: Number of transactions.
+        data_type: bigint
+        constraints:
+          - type: not_null
       - name: units
         description: Units sold.
+        data_type: bigint
+        constraints:
+          - type: not_null
       - name: customers
         description: Distinct customers.
+        data_type: bigint
+        constraints:
+          - type: not_null
       - name: net_amount
         description: Sales before tax.
+        data_type: numeric(16,2)
+        constraints:
+          - type: not_null
       - name: tax_amount
         description: Tax.
+        data_type: numeric(16,2)
+        constraints:
+          - type: not_null
       - name: gross_amount
         description: Sales including tax.
+        data_type: numeric(16,2)
+        constraints:
+          - type: not_null
       - name: rejected_transactions
         description: Transactions of the day rejected in staging, so missing from the figures above.
+        data_type: bigint
+        constraints:
+          - type: not_null
       - name: completeness
         description: transactions / (transactions + rejected_transactions), from 0 to 1.
+        data_type: numeric(5,4)
+        constraints:
+          - type: not_null
 
   - name: agg_product_sales
     description: Sales per product, from fct_transactions.
     columns:
       - name: product_id
         description: Identifier of the product.
+        data_type: integer
+        constraints:
+          - type: primary_key
       - name: product_name
         description: Name of the product, from dim_products.
+        data_type: text
+        constraints:
+          - type: not_null
       - name: transactions
         description: Number of transactions.
+        data_type: bigint
+        constraints:
+          - type: not_null
       - name: units
         description: Units sold.
+        data_type: bigint
+        constraints:
+          - type: not_null
       - name: customers
         description: Distinct customers who bought the product.
+        data_type: bigint
+        constraints:
+          - type: not_null
       - name: net_amount
         description: Sales before tax.
+        data_type: numeric(16,2)
+        constraints:
+          - type: not_null
       - name: gross_amount
         description: Sales including tax.
+        data_type: numeric(16,2)
+        constraints:
+          - type: not_null
       - name: avg_unit_price
         description: net_amount / units, i.e. the average price weighted by units.
+        data_type: numeric(12,2)
+        constraints:
+          - type: not_null
       - name: first_sale_date
         description: Date of the first sale.
+        data_type: date
+        constraints:
+          - type: not_null
       - name: last_sale_date
         description: Date of the most recent sale.
+        data_type: date
+        constraints:
+          - type: not_null
 
   - name: agg_customer_sales
     description: Sales per customer, from fct_transactions.
     columns:
       - name: customer_id
         description: Identifier of the customer.
+        data_type: integer
+        constraints:
+          - type: primary_key
       - name: transactions
         description: Number of transactions.
+        data_type: bigint
+        constraints:
+          - type: not_null
       - name: units
         description: Units bought.
+        data_type: bigint
+        constraints:
+          - type: not_null
       - name: products
         description: Distinct products bought.
+        data_type: bigint
+        constraints:
+          - type: not_null
       - name: net_amount
         description: Spend before tax.
+        data_type: numeric(16,2)
+        constraints:
+          - type: not_null
       - name: gross_amount
         description: Spend including tax.
+        data_type: numeric(16,2)
+        constraints:
+          - type: not_null
       - name: avg_transaction_value
         description: gross_amount / transactions.
+        data_type: numeric(14,2)
+        constraints:
+          - type: not_null
       - name: first_transaction_date
         description: Date of the first transaction.
+        data_type: date
+        constraints:
+          - type: not_null
       - name: last_transaction_date
         description: Date of the most recent transaction.
+        data_type: date
+        constraints:
+          - type: not_null

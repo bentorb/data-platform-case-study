@@ -13,6 +13,10 @@ models:
       +schema: staging
       +materialized: view
     # Tables: core is what analysts query, so reads should be fast and stable.
+    # Every core model must declare its columns and types (a contract), and dbt
+    # creates the table from that declaration rather than from the query.
     core:
       +schema: core
       +materialized: table
+      +contract:
+        enforced: true

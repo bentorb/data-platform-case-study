@@ -14,3 +14,5 @@ sources:
             description: Position of the row in the source file, starting at 1.
           - name: _loaded_at
             description: When the row was loaded; shared by all rows of one load.
+          - name: _load_id
+            description: The load's entry in audit.load_log (run, attempt, row counts).

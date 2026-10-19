@@ -15,6 +15,8 @@ from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.sdk import ObjectStoragePath
 from psycopg import sql
 
+from lib.ingestion import load_log
+
 log = logging.getLogger(__name__)
 
 CHUNK_SIZE = 1024 * 1024
@@ -24,6 +26,7 @@ METADATA_COLUMNS = {
     "_source_file": "text not null",
     "_source_row": "bigint not null",
     "_loaded_at": "timestamptz not null",
+    "_load_id": "bigint not null",  # the audit.load_log entry of the load
 }
 
 
@@ -43,7 +46,8 @@ def load_csv(
 
     Every source column is created as text, so malformed values cannot break the load;
     typing happens downstream. Each row also records its source file, its position in
-    the file and the load time. The file is streamed into COPY in chunks, so memory use
+    the file, the load time and the load's entry in audit.load_log, where every
+    attempt is logged. The file is streamed into COPY in chunks, so memory use
     does not grow with file size. Returns the number of rows loaded.
     """
     schema, name = table.split(".")
@@ -57,64 +61,76 @@ def load_csv(
         for c, definition in METADATA_COLUMNS.items()
     ]
     source = ObjectStoragePath(source_uri, conn_id=source_conn_id)
+    hook = PostgresHook(postgres_conn_id=postgres_conn_id)
 
-    # The connection block commits on success, rolls back on error, then closes the
-    # connection: everything below runs in one transaction.
-    with PostgresHook(postgres_conn_id=postgres_conn_id).get_conn() as conn:
-        with conn.cursor() as cur, source.open("rb", block_size=CHUNK_SIZE) as stream:
-            # Serialises loads of the same file into the same table: without it, two
-            # concurrent loads could both delete before either inserts, leaving both
-            # copies. Released automatically when the transaction ends.
-            cur.execute(
-                "select pg_advisory_xact_lock(hashtextextended(%s, 0))",
-                (f"{table}|{source_uri}",),
-            )
-
-            cur.execute(
-                sql.SQL("create table if not exists {} ({})").format(
-                    table_id, sql.SQL(", ").join(text_columns + metadata_columns)
+    load_id = load_log.start(hook, target_table=table, source_file=source_uri)
+    try:
+        # The connection block commits on success, rolls back on error, then closes the
+        # connection: everything below runs in one transaction.
+        with hook.get_conn() as conn:
+            with conn.cursor() as cur, source.open("rb", block_size=CHUNK_SIZE) as stream:
+                # Serialises loads of the same file into the same table: without it, two
+                # concurrent loads could both delete before either inserts, leaving both
+                # copies. Released automatically when the transaction ends.
+                cur.execute(
+                    "select pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                    (f"{table}|{source_uri}",),
                 )
-            )
-            # Keeps the delete below fast as the table grows.
-            cur.execute(
-                sql.SQL("create index if not exists {} on {} (_source_file)").format(
-                    index_id, table_id
+
+                cur.execute(
+                    sql.SQL("create table if not exists {} ({})").format(
+                        table_id, sql.SQL(", ").join(text_columns + metadata_columns)
+                    )
                 )
-            )
+                # Keeps the delete below fast as the table grows.
+                cur.execute(
+                    sql.SQL("create index if not exists {} on {} (_source_file)").format(
+                        index_id, table_id
+                    )
+                )
 
-            # COPY into a temporary table first, so the metadata can be added on insert.
-            # The identity column numbers the rows in file order; the table is dropped
-            # when the transaction ends.
-            cur.execute(
-                sql.SQL(
-                    "create temp table {} (_source_row bigint generated always as identity, {})"
-                    " on commit drop"
-                ).format(incoming_id, sql.SQL(", ").join(text_columns))
-            )
-            copy_sql = sql.SQL(
-                "copy {} ({}) from stdin with (format csv, header true, encoding 'UTF8')"
-            ).format(incoming_id, column_list)
-            with cur.copy(copy_sql) as copy:
-                while chunk := stream.read(CHUNK_SIZE):
-                    copy.write(chunk)
+                # COPY into a temporary table first, so the metadata can be added on insert.
+                # The identity column numbers the rows in file order; the table is dropped
+                # when the transaction ends.
+                cur.execute(
+                    sql.SQL(
+                        "create temp table {} (_source_row bigint generated always as identity, {})"
+                        " on commit drop"
+                    ).format(incoming_id, sql.SQL(", ").join(text_columns))
+                )
+                copy_sql = sql.SQL(
+                    "copy {} ({}) from stdin with (format csv, header true, encoding 'UTF8')"
+                ).format(incoming_id, column_list)
+                with cur.copy(copy_sql) as copy:
+                    while chunk := stream.read(CHUNK_SIZE):
+                        copy.write(chunk)
 
-            # Replace the rows of any earlier load of this file. Same transaction as the
-            # insert, so readers never see the table without them.
-            cur.execute(
-                sql.SQL("delete from {} where _source_file = %s").format(table_id),
-                (source_uri,),
-            )
-            replaced = cur.rowcount
+                # Replace the rows of any earlier load of this file. Same transaction as the
+                # insert, so readers never see the table without them.
+                cur.execute(
+                    sql.SQL("delete from {} where _source_file = %s").format(table_id),
+                    (source_uri,),
+                )
+                replaced = cur.rowcount
 
-            # now() is the transaction's start time, so all rows of a load share it.
-            cur.execute(
-                sql.SQL(
-                    "insert into {} ({}, _source_file, _source_row, _loaded_at)"
-                    " select {}, %s::text, _source_row, now() from {} order by _source_row"
-                ).format(table_id, column_list, column_list, incoming_id),
-                (source_uri,),
-            )
-            rows = cur.rowcount
+                # now() is the transaction's start time, so all rows of a load share it.
+                cur.execute(
+                    sql.SQL(
+                        "insert into {} ({}, _source_file, _source_row, _loaded_at, _load_id)"
+                        " select {}, %s::text, _source_row, now(), %s::bigint"
+                        " from {} order by _source_row"
+                    ).format(table_id, column_list, column_list, incoming_id),
+                    (source_uri, load_id),
+                )
+                rows = cur.rowcount
 
-    log.info("Loaded %s rows from %s into %s, replacing %s", rows, source_uri, table, replaced)
+                load_log.succeed(cur, load_id, rows_loaded=rows, rows_replaced=replaced)
+    except Exception as error:
+        load_log.fail(hook, load_id, error)
+        raise
+
+    log.info(
+        "Load %s: loaded %s rows from %s into %s, replacing %s",
+        load_id, rows, source_uri, table, replaced,
+    )
     return rows

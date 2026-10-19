@@ -12,5 +12,6 @@ select
     tax,
     _source_file,
     _source_row,
-    _loaded_at
+    _loaded_at,
+    _load_id
 from {{ source('raw', 'customer_transactions') }}

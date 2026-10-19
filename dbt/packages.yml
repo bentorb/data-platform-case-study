@@ -1,0 +1,5 @@
+# Installed into the Airflow image at build time (airflow/Dockerfile): rebuild the image
+# after changing this file.
+packages:
+  - package: dbt-labs/dbt_utils
+    version: 1.4.1

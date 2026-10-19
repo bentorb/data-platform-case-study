@@ -4,6 +4,10 @@ profile: data_platform
 
 model-paths: ["models"]
 macro-paths: ["macros"]
+test-paths: ["tests"]
+# Set in the Airflow image, where packages are installed at build time; defaults to
+# dbt's usual folder when dbt runs elsewhere.
+packages-install-path: "{{ env_var('DBT_PACKAGES_PATH', 'dbt_packages') }}"
 
 # Each model folder builds into the warehouse schema of the same name
 # (see macros/generate_schema_name.sql).
@@ -20,3 +24,9 @@ models:
       +materialized: table
       +contract:
         enforced: true
+
+# Each test's failing rows are saved as a table in audit, replaced on every run.
+data_tests:
+  data_platform:
+    +store_failures: true
+    +schema: audit

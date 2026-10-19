@@ -2,7 +2,11 @@ name: data-platform
 
 # Settings shared by every Airflow service.
 x-airflow-common: &airflow-common
-  build: ./airflow
+  build:
+    context: ./airflow
+    # The image installs the dbt packages listed in dbt/packages.yml.
+    additional_contexts:
+      dbt: ./dbt
   image: data-platform-airflow:local
   environment: &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor

@@ -3,11 +3,19 @@ models:
     description: >
       Customer transactions from the raw layer, typed and cleaned. Every raw row is
       kept; values that cannot be used are null and listed in dq_errors.
+    data_tests:
+      # Warns, not fails: rejected rows make core incomplete, not wrong.
+      - max_error_rate:
+          arguments:
+            threshold: 0.1
+          config:
+            severity: warn
     columns:
       - name: transaction_id
         description: Identifier of the transaction. A 'T' prefix is removed.
         data_tests:
           - not_null
+          - unique
       - name: customer_id
         description: Identifier of the customer.
       - name: transaction_date
@@ -26,7 +34,27 @@ models:
         description: >
           Codes of values repaired from a known alternative format, e.g.
           transaction_id_prefixed, transaction_date_dmy, product_id_prefixed.
+        data_tests:
+          - not_null
       - name: dq_errors
         description: >
           Codes of values that are null because they were missing (<column>_missing)
           or could not be parsed (<column>_invalid).
+        data_tests:
+          - not_null
+      - name: _source_file
+        description: URI of the file the row was loaded from.
+        data_tests:
+          - not_null
+      - name: _source_row
+        description: Position of the row in the source file.
+        data_tests:
+          - not_null
+      - name: _loaded_at
+        description: When the row was loaded.
+        data_tests:
+          - not_null
+      - name: _load_id
+        description: The load's entry in audit.load_log.
+        data_tests:
+          - not_null

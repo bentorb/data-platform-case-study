@@ -51,6 +51,11 @@ models:
         data_type: numeric(5,4)
         constraints:
           - type: not_null
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
 
   - name: agg_product_sales
     description: Sales per product, from fct_transactions.

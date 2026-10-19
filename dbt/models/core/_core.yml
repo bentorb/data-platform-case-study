@@ -1,3 +1,5 @@
+# Keys and not-null columns are enforced by the contract constraints, so they are
+# not tested again; tests cover what constraints cannot.
 models:
   - name: dim_products
     description: Products sold, one row per product.
@@ -39,36 +41,65 @@ models:
         data_type: integer
         constraints:
           - type: not_null
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_products')
+                field: product_id
       - name: quantity
         description: Number of units.
         data_type: integer
         constraints:
           - type: not_null
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1
       - name: unit_price
         description: Price of one unit, before tax.
         data_type: numeric(12,2)
         constraints:
           - type: not_null
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
       - name: unit_tax
         description: Tax on one unit (assumed per unit; the source does not say).
         data_type: numeric(12,2)
         constraints:
           - type: not_null
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
       - name: net_amount
         description: quantity × unit_price.
         data_type: numeric(14,2)
         constraints:
           - type: not_null
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
       - name: tax_amount
         description: quantity × unit_tax.
         data_type: numeric(14,2)
         constraints:
           - type: not_null
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
       - name: gross_amount
         description: net_amount + tax_amount.
         data_type: numeric(14,2)
         constraints:
           - type: not_null
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
       - name: _load_id
         description: The load's entry in audit.load_log.
         data_type: bigint

@@ -20,4 +20,14 @@ RUN python -m venv /opt/dbt-venv \
  && /opt/dbt-venv/bin/pip install --no-cache-dir \
       "dbt-core==1.12.5" \
       "dbt-postgres==1.11.0"
+
+# dbt packages from dbt/packages.yml (the "dbt" build context, see docker-compose.yml),
+# installed at build time so runs need no internet. dbt deps needs a project file; a
+# minimal one is enough to install the packages. dbt_project.yml reads the same path.
+ENV DBT_PACKAGES_PATH=/opt/dbt-packages
+COPY --from=dbt packages.yml /tmp/dbt-deps/packages.yml
+RUN cd /tmp/dbt-deps \
+ && printf 'name: deps\nversion: "1.0.0"\npackages-install-path: %s\n' "${DBT_PACKAGES_PATH}" > dbt_project.yml \
+ && /opt/dbt-venv/bin/dbt deps \
+ && rm -rf /tmp/dbt-deps
 USER airflow

@@ -27,7 +27,12 @@ def build_dbt_task_group(group_id: str = "dbt", select: list[str] | None = None)
     """
     return DbtTaskGroup(
         group_id=group_id,
-        project_config=ProjectConfig(dbt_project_path=DBT_PROJECT_PATH),
+        project_config=ProjectConfig(
+            dbt_project_path=DBT_PROJECT_PATH,
+            # dbt packages are installed in the Airflow image at build time; otherwise
+            # Cosmos would download them while parsing and before every task.
+            install_dbt_deps=False,
+        ),
         profile_config=ProfileConfig(
             profile_name="data_platform",
             target_name="local",
@@ -48,5 +53,8 @@ def build_dbt_task_group(group_id: str = "dbt", select: list[str] | None = None)
             dbt_executable_path=DBT_EXECUTABLE_PATH,
             select=select or [],
             test_behavior=TestBehavior.AFTER_EACH,
+            # Tests on several models (e.g. relationships) get their own task, run once
+            # all those models are built, instead of with one of them.
+            should_detach_multiple_parents_tests=True,
         ),
     )

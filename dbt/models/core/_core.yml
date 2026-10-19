@@ -6,3 +6,36 @@ models:
         description: Identifier of the product.
       - name: product_name
         description: Name of the product, as of its most recent transaction.
+
+  - name: fct_transactions
+    description: >
+      Customer transactions, one row per transaction. Only transactions that passed
+      every staging check are included; rejected ones stay in
+      stg_customer_transactions with their dq_errors.
+    columns:
+      - name: transaction_id
+        description: Identifier of the transaction.
+      - name: transaction_date
+        description: Date of the transaction.
+      - name: customer_id
+        description: Identifier of the customer.
+      - name: product_id
+        description: Product sold; see dim_products.
+      - name: quantity
+        description: Number of units.
+      - name: unit_price
+        description: Price of one unit, before tax.
+      - name: unit_tax
+        description: Tax on one unit (assumed per unit; the source does not say).
+      - name: net_amount
+        description: quantity × unit_price.
+      - name: tax_amount
+        description: quantity × unit_tax.
+      - name: gross_amount
+        description: net_amount + tax_amount.
+      - name: _load_id
+        description: The load's entry in audit.load_log.
+      - name: _source_file
+        description: URI of the file the transaction was loaded from.
+      - name: _source_row
+        description: Position of the transaction in the source file.

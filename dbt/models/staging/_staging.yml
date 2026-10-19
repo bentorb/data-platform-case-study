@@ -1,8 +1,32 @@
 models:
   - name: stg_customer_transactions
-    description: Customer transactions from the raw layer.
+    description: >
+      Customer transactions from the raw layer, typed and cleaned. Every raw row is
+      kept; values that cannot be used are null and listed in dq_errors.
     columns:
       - name: transaction_id
-        description: Identifier of the transaction, as received.
+        description: Identifier of the transaction. A 'T' prefix is removed.
         data_tests:
           - not_null
+      - name: customer_id
+        description: Identifier of the customer.
+      - name: transaction_date
+        description: Date of the transaction, from YYYY-MM-DD or DD-MM-YYYY.
+      - name: product_id
+        description: Identifier of the product. A 'P' prefix is removed.
+      - name: product_name
+        description: Name of the product.
+      - name: quantity
+        description: Number of units.
+      - name: price
+        description: Unit price, as an exact decimal.
+      - name: tax
+        description: Tax amount, as an exact decimal.
+      - name: dq_warnings
+        description: >
+          Codes of values repaired from a known alternative format, e.g.
+          transaction_id_prefixed, transaction_date_dmy, product_id_prefixed.
+      - name: dq_errors
+        description: >
+          Codes of values that are null because they were missing (<column>_missing)
+          or could not be parsed (<column>_invalid).

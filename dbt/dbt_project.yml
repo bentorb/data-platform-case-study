@@ -9,6 +9,10 @@ test-paths: ["tests"]
 # dbt's usual folder when dbt runs elsewhere.
 packages-install-path: "{{ env_var('DBT_PACKAGES_PATH', 'dbt_packages') }}"
 
+# Every model and test result is recorded in audit.dbt_run_results.
+on-run-end:
+  - "{{ log_run_results(results) }}"
+
 # Each model folder builds into the warehouse schema of the same name
 # (see macros/generate_schema_name.sql).
 models:

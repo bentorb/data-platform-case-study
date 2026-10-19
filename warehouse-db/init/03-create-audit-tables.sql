@@ -28,3 +28,33 @@ CREATE INDEX load_log_target_source_idx ON audit.load_log (target_table, source_
 -- are never removed.
 GRANT SELECT, INSERT, UPDATE ON audit.load_log TO ingestion;
 GRANT SELECT ON audit.load_log TO transformation;
+
+-- One row per model or test result of each dbt invocation, written by dbt's
+-- on-run-end hook (dbt/macros/log_run_results.sql).
+CREATE TABLE audit.dbt_run_results (
+  result_id      bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  invocation_id  text        NOT NULL,
+  command        text        NOT NULL,
+  run_started_at timestamptz NOT NULL,
+  node_id        text        NOT NULL,
+  resource_type  text        NOT NULL,
+  status         text        NOT NULL,
+  failures       bigint,
+  rows_affected  bigint,
+  execution_time numeric(10, 3),
+  message        text,
+  -- The Airflow task attempt that ran dbt; null when run outside Airflow.
+  dag_id         text,
+  run_id         text,
+  task_id        text,
+  try_number     integer,
+  recorded_at    timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (invocation_id, node_id)
+);
+
+-- Finds the history of a model or test.
+CREATE INDEX dbt_run_results_node_idx ON audit.dbt_run_results (node_id, run_started_at);
+
+-- Insert only: results are never changed or removed.
+GRANT SELECT, INSERT ON audit.dbt_run_results TO transformation;
+GRANT SELECT ON audit.dbt_run_results TO ingestion;

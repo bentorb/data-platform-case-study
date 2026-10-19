@@ -1,4 +1,4 @@
--- Sales per product, over all transactions.
+-- Sales per product, over all transactions, with the product's current name.
 
 select
     fct.product_id,
@@ -13,5 +13,7 @@ select
     min(fct.transaction_date) as first_sale_date,
     max(fct.transaction_date) as last_sale_date
 from {{ ref('fct_transactions') }} as fct
-inner join {{ ref('dim_products') }} as dim_products using (product_id)
+inner join {{ ref('dim_products') }} as dim_products
+    on dim_products.product_id = fct.product_id
+   and dim_products.is_current
 group by fct.product_id, dim_products.product_name

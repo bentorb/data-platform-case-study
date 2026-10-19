@@ -2,16 +2,61 @@
 # not tested again; tests cover what constraints cannot.
 models:
   - name: dim_products
-    description: Products sold, one row per product.
+    description: >
+      Products sold, with the history of their names (SCD type 2): one row per version
+      of a product, valid from valid_from (inclusive) to valid_to (exclusive).
+    data_tests:
+      # Each product's versions cover all dates, without gaps or overlaps.
+      - dbt_utils.mutually_exclusive_ranges:
+          arguments:
+            lower_bound_column: valid_from
+            upper_bound_column: valid_to
+            partition_by: product_id
+            gaps: not_allowed
     columns:
-      - name: product_id
-        description: Identifier of the product.
-        data_type: integer
+      - name: product_key
+        description: Surrogate key of the version, from product_id and valid_from.
+        data_type: text
         constraints:
           - type: primary_key
+      - name: product_id
+        description: Identifier of the product, shared by all its versions.
+        data_type: integer
+        constraints:
+          - type: not_null
+        data_tests:
+          # One current version per product.
+          - unique:
+              config:
+                where: is_current
       - name: product_name
-        description: Name of the product, as of its most recent transaction.
+        description: Name of the product during the version.
         data_type: text
+        constraints:
+          - type: not_null
+      - name: valid_from
+        description: First day of the version; 1900-01-01 for a product's first version.
+        data_type: date
+        constraints:
+          - type: not_null
+      - name: valid_to
+        description: Day after the version's last day; 9999-12-31 for the current version.
+        data_type: date
+        constraints:
+          - type: not_null
+      - name: is_current
+        description: Whether this is the product's current version.
+        data_type: boolean
+        constraints:
+          - type: not_null
+      - name: last_seen_on
+        description: Date of the latest transaction showing this version's name.
+        data_type: date
+        constraints:
+          - type: not_null
+      - name: _load_id
+        description: The latest load of the product's transactions when the version was last written.
+        data_type: bigint
         constraints:
           - type: not_null
 

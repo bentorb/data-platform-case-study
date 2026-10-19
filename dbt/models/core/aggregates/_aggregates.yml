@@ -66,7 +66,7 @@ models:
         constraints:
           - type: primary_key
       - name: product_name
-        description: Name of the product, from dim_products.
+        description: Current name of the product, from dim_products.
         data_type: text
         constraints:
           - type: not_null

@@ -13,6 +13,8 @@ CREATE TABLE audit.load_log (
   started_at    timestamptz NOT NULL,
   finished_at   timestamptz,
   error_message text,
+  -- Columns in the file that the load did not expect, so did not load.
+  schema_drift  text[],
   -- The Airflow task attempt that ran the load; null when run outside Airflow.
   dag_id        text,
   run_id        text,

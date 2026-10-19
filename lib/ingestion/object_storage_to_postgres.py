@@ -16,7 +16,7 @@ from airflow.sdk import ObjectStoragePath
 from airflow.sdk.exceptions import AirflowFailException
 from psycopg import DataError, sql
 
-from lib.ingestion import load_log
+from lib.ingestion import load_log, schema_drift
 
 log = logging.getLogger(__name__)
 
@@ -51,7 +51,12 @@ def load_csv(
     attempt is logged. The file is streamed into COPY in chunks, so memory use
     does not grow with file size. Returns the number of rows loaded.
 
-    A file whose data cannot be loaded (e.g. a malformed CSV) raises
+    Columns are matched by name, so their order in the file does not matter. Extra
+    columns in the file are left out and recorded in the load's schema_drift; a missing
+    expected column, or an existing table with other columns, fails the load (see
+    schema_drift.py).
+
+    A file whose data or structure cannot be loaded (e.g. a malformed CSV) raises
     AirflowFailException, so the task fails without retrying; other errors are raised
     as they are and retried.
     """
@@ -82,6 +87,12 @@ def load_csv(
                     (f"{table}|{source_uri}",),
                 )
 
+                # Compare the file and the table with the expected columns before
+                # touching any data. Reading the header leaves the stream at the data.
+                header = schema_drift.read_header(stream)
+                extra_columns = schema_drift.check_header(header, columns, list(METADATA_COLUMNS))
+                schema_drift.check_table(cur, schema, name, columns + list(METADATA_COLUMNS))
+
                 cur.execute(
                     sql.SQL("create table if not exists {} ({})").format(
                         table_id, sql.SQL(", ").join(text_columns + metadata_columns)
@@ -94,18 +105,23 @@ def load_csv(
                     )
                 )
 
-                # COPY into a temporary table first, so the metadata can be added on insert.
-                # The identity column numbers the rows in file order; the table is dropped
-                # when the transaction ends.
+                # COPY into a temporary table with the file's own columns, then insert
+                # the expected ones by name, adding the metadata. The identity column
+                # numbers the rows in file order; the table is dropped when the
+                # transaction ends. The header was already read, so COPY gets data only.
+                header_columns = [sql.Identifier(c) for c in header]
                 cur.execute(
                     sql.SQL(
                         "create temp table {} (_source_row bigint generated always as identity, {})"
                         " on commit drop"
-                    ).format(incoming_id, sql.SQL(", ").join(text_columns))
+                    ).format(
+                        incoming_id,
+                        sql.SQL(", ").join(sql.SQL("{} text").format(c) for c in header_columns),
+                    )
                 )
                 copy_sql = sql.SQL(
-                    "copy {} ({}) from stdin with (format csv, header true, encoding 'UTF8')"
-                ).format(incoming_id, column_list)
+                    "copy {} ({}) from stdin with (format csv, header false, encoding 'UTF8')"
+                ).format(incoming_id, sql.SQL(", ").join(header_columns))
                 with cur.copy(copy_sql) as copy:
                     while chunk := stream.read(CHUNK_SIZE):
                         copy.write(chunk)
@@ -129,7 +145,10 @@ def load_csv(
                 )
                 rows = cur.rowcount
 
-                load_log.succeed(cur, load_id, rows_loaded=rows, rows_replaced=replaced)
+                load_log.succeed(
+                    cur, load_id, rows_loaded=rows, rows_replaced=replaced,
+                    schema_drift=extra_columns,
+                )
     except Exception as error:
         load_log.fail(hook, load_id, error)
         if isinstance(error, DataError):

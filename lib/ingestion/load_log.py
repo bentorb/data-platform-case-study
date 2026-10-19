@@ -29,13 +29,17 @@ def start(hook: PostgresHook, *, target_table: str, source_file: str) -> int:
     return row[0]
 
 
-def succeed(cur: Cursor, load_id: int, *, rows_loaded: int, rows_replaced: int) -> None:
-    """Marks a load successful. Runs on the load's own cursor, inside its transaction."""
+def succeed(
+    cur: Cursor, load_id: int, *, rows_loaded: int, rows_replaced: int, schema_drift: list[str]
+) -> None:
+    """Marks a load successful, with the file's extra columns that were not loaded (if
+    any). Runs on the load's own cursor, inside its transaction."""
     cur.execute(
         "update audit.load_log"
-        " set status = 'success', rows_loaded = %s, rows_replaced = %s, finished_at = clock_timestamp()"
+        " set status = 'success', rows_loaded = %s, rows_replaced = %s, schema_drift = %s,"
+        " finished_at = clock_timestamp()"
         " where load_id = %s",
-        (rows_loaded, rows_replaced, load_id),
+        (rows_loaded, rows_replaced, schema_drift or None, load_id),
     )
 
 

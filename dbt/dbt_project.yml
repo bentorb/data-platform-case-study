@@ -24,6 +24,16 @@ models:
       +materialized: table
       +contract:
         enforced: true
+    # Data-quality history: each run appends what is new, earlier history is kept.
+    # Counts only, no raw values, so data consumers may read it.
+    audit:
+      +schema: audit
+      +materialized: incremental
+      +on_schema_change: fail
+      +contract:
+        enforced: true
+      +grants:
+        select: ["analytics"]
 
 # Each test's failing rows are saved as a table in audit, replaced on every run.
 data_tests:

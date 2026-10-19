@@ -5,8 +5,9 @@
 -- :"DBNAME" is a psql variable holding the current database name.
 REVOKE ALL ON DATABASE :"DBNAME" FROM PUBLIC;
 GRANT CONNECT ON DATABASE :"DBNAME" TO ingestion, transformation, analytics;
--- Ingestion stages each file in a temporary table before inserting it into raw.
-GRANT TEMPORARY ON DATABASE :"DBNAME" TO ingestion;
+-- Ingestion stages each file in a temporary table before inserting it into raw;
+-- dbt does the same for incremental models.
+GRANT TEMPORARY ON DATABASE :"DBNAME" TO ingestion, transformation;
 
 -- Nothing should live in the default public schema.
 REVOKE ALL ON SCHEMA public FROM PUBLIC;
@@ -28,8 +29,10 @@ GRANT USAGE, CREATE ON SCHEMA staging TO transformation;
 GRANT USAGE, CREATE ON SCHEMA core TO transformation;
 GRANT USAGE ON SCHEMA core TO analytics;
 
--- audit: written by both ingestion and transformation
+-- audit: written by both ingestion and transformation. Analytics may only read the
+-- tables granted to it explicitly (the data-quality history, see dbt_project.yml).
 GRANT USAGE, CREATE ON SCHEMA audit TO ingestion, transformation;
+GRANT USAGE ON SCHEMA audit TO analytics;
 
 -- Default privileges: grants for tables created in the future.
 -- FOR ROLE names the user that will create the tables.

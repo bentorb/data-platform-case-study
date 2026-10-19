@@ -83,15 +83,20 @@ models:
         constraints:
           - type: not_null
       - name: product_id
-        description: Product sold; see dim_products.
+        description: Identifier of the product sold.
         data_type: integer
+        constraints:
+          - type: not_null
+      - name: product_key
+        description: The product's version on the transaction's date; see dim_products.
+        data_type: text
         constraints:
           - type: not_null
         data_tests:
           - relationships:
               arguments:
                 to: ref('dim_products')
-                field: product_id
+                field: product_key
       - name: quantity
         description: Number of units.
         data_type: integer

@@ -31,3 +31,10 @@ RUN cd /tmp/dbt-deps \
  && /opt/dbt-venv/bin/dbt deps \
  && rm -rf /tmp/dbt-deps
 USER airflow
+
+# The platform's framework code and pipeline configs (the "lib" and "pipelines" build
+# contexts), so DAGs can `from lib... import ...`. The image always holds the versions
+# it was built with; docker-compose.yml mounts the working copies over them locally.
+ENV PYTHONPATH=/opt/data-platform
+COPY --from=lib . /opt/data-platform/lib
+COPY --from=pipelines . /opt/data-platform/pipelines

@@ -4,9 +4,12 @@ name: data-platform
 x-airflow-common: &airflow-common
   build:
     context: ./airflow
-    # The image installs the dbt packages listed in dbt/packages.yml.
+    # The image installs the dbt packages listed in dbt/packages.yml, and includes the
+    # framework code and pipeline configs.
     additional_contexts:
       dbt: ./dbt
+      lib: ./lib
+      pipelines: ./pipelines
   image: data-platform-airflow:local
   environment: &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
@@ -19,8 +22,10 @@ x-airflow-common: &airflow-common
     AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:-local-dev-jwt-secret}
     AIRFLOW__API_AUTH__JWT_ISSUER: airflow
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
-    # Makes the framework code in lib/ importable from DAGs (`from lib... import ...`).
-    PYTHONPATH: /opt/data-platform
+    # Parse every file in the DAGs folder, not only those mentioning "airflow" and "dag":
+    # pipeline DAG files only call lib/pipelines. The folder holds DAG files only, as
+    # shared code lives in lib/ (when it shares the folder, list it in .airflowignore).
+    AIRFLOW__CORE__DAG_DISCOVERY_SAFE_MODE: "false"
     # Optional: task failures are posted to this webhook (lib/orchestration/callbacks.py).
     ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
     # Landing zone (S3-compatible) read by ingestion tasks (conn_id: landing_zone_s3).
@@ -49,7 +54,10 @@ x-airflow-common: &airflow-common
     DBT_WAREHOUSE_PASSWORD: ${WAREHOUSE_TRANSFORMATION_PASSWORD:-transformation}
   volumes:
     - ./airflow/dags:/opt/airflow/dags
+    # Local development: the working copies replace the image's, so changes apply
+    # without rebuilding it.
     - ./lib:/opt/data-platform/lib:ro
+    - ./pipelines:/opt/data-platform/pipelines:ro
     # Outside /opt/data-platform: everything there is importable via PYTHONPATH, and a
     # folder named dbt would shadow the dbt Python package.
     - ./dbt:/opt/dbt:ro

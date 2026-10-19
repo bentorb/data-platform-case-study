@@ -14,6 +14,7 @@ from lib.transformation.dbt import build_dbt_task_group
     schedule="@daily",
     start_date=pendulum.datetime(2026, 1, 1, tz="UTC"),
     catchup=False,
+    max_active_runs=1,  # dbt cannot rebuild the same model concurrently
     tags=["customer_transactions", "ingestion", "dbt"],
 )
 def customer_transactions_pipeline():

@@ -35,7 +35,11 @@ def load_csv(
     table: str,
     columns: list[str],
 ) -> int:
-    """Appends the rows of a CSV file to a table, creating the table if it does not exist.
+    """Loads the rows of a CSV file into a table, creating the table if it does not exist.
+
+    Idempotent: rows previously loaded from the same file are replaced, so re-running
+    a load never duplicates data. Concurrent loads of the same file into the same table
+    run one after the other.
 
     Every source column is created as text, so malformed values cannot break the load;
     typing happens downstream. Each row also records its source file, its position in
@@ -44,6 +48,7 @@ def load_csv(
     """
     schema, name = table.split(".")
     table_id = sql.Identifier(schema, name)
+    index_id = sql.Identifier(f"{name}__source_file_idx")
     incoming_id = sql.Identifier("_incoming")
     column_list = sql.SQL(", ").join(map(sql.Identifier, columns))
     text_columns = [sql.SQL("{} text").format(sql.Identifier(c)) for c in columns]
@@ -57,9 +62,23 @@ def load_csv(
     # connection: everything below runs in one transaction.
     with PostgresHook(postgres_conn_id=postgres_conn_id).get_conn() as conn:
         with conn.cursor() as cur, source.open("rb", block_size=CHUNK_SIZE) as stream:
+            # Serialises loads of the same file into the same table: without it, two
+            # concurrent loads could both delete before either inserts, leaving both
+            # copies. Released automatically when the transaction ends.
+            cur.execute(
+                "select pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                (f"{table}|{source_uri}",),
+            )
+
             cur.execute(
                 sql.SQL("create table if not exists {} ({})").format(
                     table_id, sql.SQL(", ").join(text_columns + metadata_columns)
+                )
+            )
+            # Keeps the delete below fast as the table grows.
+            cur.execute(
+                sql.SQL("create index if not exists {} on {} (_source_file)").format(
+                    index_id, table_id
                 )
             )
 
@@ -79,6 +98,14 @@ def load_csv(
                 while chunk := stream.read(CHUNK_SIZE):
                     copy.write(chunk)
 
+            # Replace the rows of any earlier load of this file. Same transaction as the
+            # insert, so readers never see the table without them.
+            cur.execute(
+                sql.SQL("delete from {} where _source_file = %s").format(table_id),
+                (source_uri,),
+            )
+            replaced = cur.rowcount
+
             # now() is the transaction's start time, so all rows of a load share it.
             cur.execute(
                 sql.SQL(
@@ -89,5 +116,5 @@ def load_csv(
             )
             rows = cur.rowcount
 
-    log.info("Loaded %s rows from %s into %s", rows, source_uri, table)
+    log.info("Loaded %s rows from %s into %s, replacing %s", rows, source_uri, table, replaced)
     return rows

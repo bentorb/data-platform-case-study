@@ -62,7 +62,8 @@ def load_csv(
     """
     schema, name = table.split(".")
     table_id = sql.Identifier(schema, name)
-    index_id = sql.Identifier(f"{name}__source_file_idx")
+    source_file_index_id = sql.Identifier(f"{name}__source_file_idx")
+    load_id_index_id = sql.Identifier(f"{name}__load_id_idx")
     incoming_id = sql.Identifier("_incoming")
     column_list = sql.SQL(", ").join(map(sql.Identifier, columns))
     text_columns = [sql.SQL("{} text").format(sql.Identifier(c)) for c in columns]
@@ -98,10 +99,17 @@ def load_csv(
                         table_id, sql.SQL(", ").join(text_columns + metadata_columns)
                     )
                 )
-                # Keeps the delete below fast as the table grows.
+                # Keep the delete below fast as the table grows, and the reads of
+                # incremental models downstream, which select the loads since their
+                # last run.
                 cur.execute(
                     sql.SQL("create index if not exists {} on {} (_source_file)").format(
-                        index_id, table_id
+                        source_file_index_id, table_id
+                    )
+                )
+                cur.execute(
+                    sql.SQL("create index if not exists {} on {} (_load_id)").format(
+                        load_id_index_id, table_id
                     )
                 )
 

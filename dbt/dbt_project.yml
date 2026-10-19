@@ -1,0 +1,14 @@
+name: data_platform
+version: "1.0.0"
+profile: data_platform
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+
+# Each model folder builds into the warehouse schema of the same name
+# (see macros/generate_schema_name.sql).
+models:
+  data_platform:
+    staging:
+      +schema: staging
+      +materialized: view

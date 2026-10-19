@@ -1,0 +1,7 @@
+sources:
+  - name: raw
+    description: Data exactly as loaded by ingestion. All columns are text.
+    schema: raw
+    tables:
+      - name: customer_transactions
+        description: Customer transactions loaded from the landing zone.

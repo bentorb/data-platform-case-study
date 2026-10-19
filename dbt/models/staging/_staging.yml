@@ -1,0 +1,8 @@
+models:
+  - name: stg_customer_transactions
+    description: Customer transactions from the raw layer.
+    columns:
+      - name: transaction_id
+        description: Identifier of the transaction, as received.
+        data_tests:
+          - not_null

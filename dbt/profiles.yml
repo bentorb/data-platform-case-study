@@ -1,0 +1,15 @@
+# Connection to the warehouse. Every value comes from an environment variable,
+# so no credentials are stored here.
+data_platform:
+  target: local
+  outputs:
+    local:
+      type: postgres
+      host: "{{ env_var('DBT_WAREHOUSE_HOST') }}"
+      port: "{{ env_var('DBT_WAREHOUSE_PORT') | as_number }}"
+      dbname: "{{ env_var('DBT_WAREHOUSE_DBNAME') }}"
+      user: "{{ env_var('DBT_WAREHOUSE_USER') }}"
+      password: "{{ env_var('DBT_WAREHOUSE_PASSWORD') }}"
+      # Default schema for models without a +schema config.
+      schema: staging
+      threads: 4

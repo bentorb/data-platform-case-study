@@ -33,9 +33,20 @@ x-airflow-common: &airflow-common
        "schema": "${WAREHOUSE_DB_NAME:-warehouse}",
        "login": "ingestion_service",
        "password": "${WAREHOUSE_INGESTION_PASSWORD:-ingestion}"}
+    # Location of the dbt project inside the containers.
+    DBT_PROJECT_PATH: /opt/dbt
+    # Warehouse connection used by dbt (read by dbt/profiles.yml).
+    DBT_WAREHOUSE_HOST: warehouse-db
+    DBT_WAREHOUSE_PORT: "5432"
+    DBT_WAREHOUSE_DBNAME: ${WAREHOUSE_DB_NAME:-warehouse}
+    DBT_WAREHOUSE_USER: transformation_service
+    DBT_WAREHOUSE_PASSWORD: ${WAREHOUSE_TRANSFORMATION_PASSWORD:-transformation}
   volumes:
     - ./airflow/dags:/opt/airflow/dags
     - ./lib:/opt/data-platform/lib:ro
+    # Outside /opt/data-platform: everything there is importable via PYTHONPATH, and a
+    # folder named dbt would shadow the dbt Python package.
+    - ./dbt:/opt/dbt:ro
     - airflow_logs:/opt/airflow/logs
   restart: unless-stopped
   depends_on: &airflow-common-depends-on

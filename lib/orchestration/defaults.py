@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+from lib.orchestration.callbacks import log_retry, notify_failure
+
 DEFAULT_ARGS = {
     # Transient failures (a database restart, a network blip) get two more attempts.
     "retries": 2,
@@ -14,4 +16,7 @@ DEFAULT_ARGS = {
     "max_retry_delay": timedelta(minutes=10),
     # A hung task fails instead of blocking the DAG, whose runs do not overlap.
     "execution_timeout": timedelta(minutes=30),
+    # Final failures are logged and sent to the alert webhook; retries are logged.
+    "on_failure_callback": notify_failure,
+    "on_retry_callback": log_retry,
 }

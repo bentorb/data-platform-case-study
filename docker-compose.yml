@@ -21,6 +21,8 @@ x-airflow-common: &airflow-common
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
     # Makes the framework code in lib/ importable from DAGs (`from lib... import ...`).
     PYTHONPATH: /opt/data-platform
+    # Optional: task failures are posted to this webhook (lib/orchestration/callbacks.py).
+    ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
     # Landing zone (S3-compatible) read by ingestion tasks (conn_id: landing_zone_s3).
     AIRFLOW_CONN_LANDING_ZONE_S3: >-
       {"conn_type": "aws",

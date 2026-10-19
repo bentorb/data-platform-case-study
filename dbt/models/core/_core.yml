@@ -1,0 +1,8 @@
+models:
+  - name: dim_products
+    description: Products sold, one row per product.
+    columns:
+      - name: product_id
+        description: Identifier of the product.
+      - name: product_name
+        description: Name of the product, as of its most recent transaction.

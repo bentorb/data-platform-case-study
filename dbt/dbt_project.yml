@@ -12,3 +12,7 @@ models:
     staging:
       +schema: staging
       +materialized: view
+    # Tables: core is what analysts query, so reads should be fast and stable.
+    core:
+      +schema: core
+      +materialized: table

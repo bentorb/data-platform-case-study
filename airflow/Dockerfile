@@ -1,9 +1,14 @@
 # Airflow image for the data platform: the official image plus the extra packages it needs.
-FROM apache/airflow:3.3.2
+# Two stages: `platform`, the image the Airflow services run, and `test`, the same image
+# plus the test packages, which the tests service runs (docker-compose.yml).
 
 # Airflow's constraints file pins every dependency to versions tested with this release,
 # so installing extra packages cannot upgrade or downgrade Airflow's own dependencies.
+# Declared before the stages so both can use it (each re-declares it).
 ARG AIRFLOW_CONSTRAINTS=https://raw.githubusercontent.com/apache/airflow/constraints-3.3.2/constraints-3.13.txt
+
+FROM apache/airflow:3.3.2 AS platform
+ARG AIRFLOW_CONSTRAINTS
 
 # s3fs: S3 backend for ObjectStoragePath (the local landing zone is S3-compatible).
 # astronomer-cosmos: renders the dbt project as Airflow tasks.
@@ -38,3 +43,8 @@ USER airflow
 ENV PYTHONPATH=/opt/data-platform
 COPY --from=lib . /opt/data-platform/lib
 COPY --from=pipelines . /opt/data-platform/pipelines
+
+# Same Airflow, Cosmos and dbt versions as the platform, plus the test runner.
+FROM platform AS test
+ARG AIRFLOW_CONSTRAINTS
+RUN pip install --no-cache-dir "pytest==8.4.2" --constraint "${AIRFLOW_CONSTRAINTS}"

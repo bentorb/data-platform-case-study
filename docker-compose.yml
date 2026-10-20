@@ -2,8 +2,9 @@ name: data-platform
 
 # Settings shared by every Airflow service.
 x-airflow-common: &airflow-common
-  build:
+  build: &airflow-build
     context: ./airflow
+    target: platform
     # The image installs the dbt packages listed in dbt/packages.yml, and includes the
     # framework code and pipeline configs.
     additional_contexts:
@@ -182,6 +183,25 @@ services:
       _AIRFLOW_WWW_USER_CREATE: "true"
       _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USER:-admin}
       _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin}
+    restart: "no"
+
+  # Runs the test suite (tests/) in the Airflow image plus the test packages, against
+  # the working copies of the code. Not started by `docker compose up`; run it with
+  # `docker compose run --rm tests`, or e.g. `docker compose run --rm tests tests/unit -k drift`.
+  tests:
+    build:
+      <<: *airflow-build
+      target: test
+    image: data-platform-airflow-test:local
+    profiles: ["test"]
+    entrypoint: ["python", "-m", "pytest"]
+    command: ["tests/unit"]
+    working_dir: /opt/data-platform
+    volumes:
+      - ./lib:/opt/data-platform/lib:ro
+      - ./pipelines:/opt/data-platform/pipelines:ro
+      - ./tests:/opt/data-platform/tests:ro
+      - ./pyproject.toml:/opt/data-platform/pyproject.toml:ro
     restart: "no"
 
   # Cleans Airflow's metadata database: runs, task instances, XComs and the like

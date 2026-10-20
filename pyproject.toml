@@ -1,0 +1,6 @@
+# Settings of the development tools; the platform itself is not installed as a package.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Test files are not packages: each test module is imported on its own.
+addopts = ["--import-mode=importlib", "-p", "no:cacheprovider"]

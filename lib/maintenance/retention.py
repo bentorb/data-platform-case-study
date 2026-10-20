@@ -38,23 +38,31 @@ class AuditRetention:
 # returns the cutoff and the number of rows deleted. Children before parents: the
 # data-quality tables reference load_log.
 _EXPIRY = {
-    "audit.dbt_run_results": ("dbt_run_results_days", """
+    "audit.dbt_run_results": (
+        "dbt_run_results_days",
+        """
         with deleted as (
             delete from audit.dbt_run_results
             where recorded_at < now() - make_interval(days => %(days)s)
             returning 1
         )
         select now() - make_interval(days => %(days)s), count(*) from deleted
-    """),
-    "audit.publish_log": ("publish_log_days", """
+    """,
+    ),
+    "audit.publish_log": (
+        "publish_log_days",
+        """
         with deleted as (
             delete from audit.publish_log
             where published_at < now() - make_interval(days => %(days)s)
             returning 1
         )
         select now() - make_interval(days => %(days)s), count(*) from deleted
-    """),
-    "audit.dq_issue_counts": ("data_quality_days", """
+    """,
+    ),
+    "audit.dq_issue_counts": (
+        "data_quality_days",
+        """
         with deleted as (
             delete from audit.dq_issue_counts
             where load_id in (
@@ -64,8 +72,11 @@ _EXPIRY = {
             returning 1
         )
         select now() - make_interval(days => %(days)s), count(*) from deleted
-    """),
-    "audit.dq_load_summary": ("data_quality_days", """
+    """,
+    ),
+    "audit.dq_load_summary": (
+        "data_quality_days",
+        """
         with deleted as (
             delete from audit.dq_load_summary
             where load_id in (
@@ -75,8 +86,11 @@ _EXPIRY = {
             returning 1
         )
         select now() - make_interval(days => %(days)s), count(*) from deleted
-    """),
-    "audit.load_log": ("data_quality_days", """
+    """,
+    ),
+    "audit.load_log": (
+        "data_quality_days",
+        """
         with latest_success as (
             select max(load_id) as load_id
             from audit.load_log
@@ -92,13 +106,15 @@ _EXPIRY = {
             returning 1
         )
         select now() - make_interval(days => %(days)s), count(*) from deleted
-    """),
+    """,
+    ),
 }
 
 
-def expire_audit_entries(*, postgres_conn_id: str, retention: AuditRetention = AuditRetention()) -> dict[str, int]:
+def expire_audit_entries(*, postgres_conn_id: str, retention: AuditRetention | None = None) -> dict[str, int]:
     """Deletes the audit entries older than their retention, in one transaction, and
     records each table's expiry in audit.retention_log. Returns the rows deleted per table."""
+    retention = retention or AuditRetention()
     hook = PostgresHook(postgres_conn_id=postgres_conn_id)
     attempt = airflow_task_attempt()
     deleted = {}

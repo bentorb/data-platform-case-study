@@ -23,11 +23,11 @@ with observations as (
     select product_id, product_name, transaction_date, _load_id, _source_row
     from {{ ref('stg_customer_transactions') }}
     where product_id is not null
-      and product_name is not null
-      and transaction_date is not null
-    {% if is_incremental() %}
-      and _load_id > {{ load_watermark() }}
-    {% endif %}
+        and product_name is not null
+        and transaction_date is not null
+        {% if is_incremental() %}
+            and _load_id > {{ load_watermark() }}
+        {% endif %}
 
 ),
 
@@ -39,7 +39,7 @@ daily_names as (
         transaction_date as seen_on,
         product_name
     from observations
-    order by product_id, transaction_date, _load_id desc, _source_row desc
+    order by product_id asc, transaction_date asc, _load_id desc, _source_row desc
 
 ),
 
@@ -55,24 +55,24 @@ product_loads as (
 -- version comes first, then the newer days; a full refresh versions every day.
 timeline as (
 
-{% if is_incremental() %}
+    {% if is_incremental() %}
 
-    select product_id, last_seen_on as seen_on, product_name, valid_from as current_valid_from
-    from {{ this }}
-    where is_current
-      and product_id in (select product_id from product_loads)
+        select product_id, last_seen_on as seen_on, product_name, valid_from as current_valid_from
+        from {{ this }}
+        where is_current
+            and product_id in (select product_loads.product_id from product_loads)
 
-    union all
+        union all
 
-    select daily_names.product_id, daily_names.seen_on, daily_names.product_name, null::date
-    from daily_names
-    left join {{ this }} as current_version
-        on current_version.product_id = daily_names.product_id
-       and current_version.is_current
-    where current_version.product_id is null
-       or daily_names.seen_on > current_version.last_seen_on
+        select daily_names.product_id, daily_names.seen_on, daily_names.product_name, null::date
+        from daily_names
+        left join {{ this }} as current_version
+            on daily_names.product_id = current_version.product_id
+                and current_version.is_current
+        where current_version.product_id is null
+            or daily_names.seen_on > current_version.last_seen_on
 
-{% else %}
+    {% else %}
 
     select product_id, seen_on, product_name, null::date as current_valid_from
     from daily_names
@@ -85,20 +85,19 @@ changes as (
 
     select
         *,
-        case
-            when product_name is distinct from lag(product_name) over (
-                partition by product_id order by seen_on
-            ) then 1 else 0
-        end as starts_version
+        lag(product_name) over (partition by product_id order by seen_on) as previous_name
     from timeline
 
 ),
 
+-- A version starts on each day whose name differs from the previous day's.
 numbered as (
 
     select
         *,
-        sum(starts_version) over (partition by product_id order by seen_on) as version_number
+        sum(case when product_name is distinct from previous_name then 1 else 0 end)
+            over (partition by product_id order by seen_on)
+        as version_number
     from changes
 
 ),

@@ -24,7 +24,7 @@ rejected as (
         count(*) as rejected_transactions
     from {{ ref('stg_customer_transactions') }}
     where cardinality(dq_errors) > 0
-      and transaction_date is not null
+        and transaction_date is not null
     group by transaction_date
 
 )
@@ -41,7 +41,7 @@ select
     coalesce(rejected.rejected_transactions, 0) as rejected_transactions,
     round(
         coalesce(sales.transactions, 0)::numeric
-            / (coalesce(sales.transactions, 0) + coalesce(rejected.rejected_transactions, 0)),
+        / (coalesce(sales.transactions, 0) + coalesce(rejected.rejected_transactions, 0)),
         4
     ) as completeness
 from sales

@@ -37,14 +37,10 @@ def check_header(header: list[str], expected: list[str], reserved: list[str]) ->
     columns the loader adds, which a file cannot use."""
     duplicates = sorted({name for name in header if header.count(name) > 1})
     if duplicates or "" in header:
-        raise SchemaDriftError(
-            f"the header has duplicate or empty column names: {header}"
-        )
+        raise SchemaDriftError(f"the header has duplicate or empty column names: {header}")
     clashing = [name for name in header if name in reserved]
     if clashing:
-        raise SchemaDriftError(
-            f"the header uses names reserved for lineage columns: {', '.join(clashing)}"
-        )
+        raise SchemaDriftError(f"the header uses names reserved for lineage columns: {', '.join(clashing)}")
     missing = [name for name in expected if name not in header]
     if missing:
         raise SchemaDriftError(f"the header is missing expected columns: {', '.join(missing)}")
@@ -58,8 +54,7 @@ def check_table(cur: Cursor, schema: str, name: str, expected: list[str]) -> Non
     """Checks that an existing table has exactly the expected columns, in any order.
     A table that does not exist yet passes: the loader creates it."""
     cur.execute(
-        "select column_name from information_schema.columns"
-        " where table_schema = %s and table_name = %s",
+        "select column_name from information_schema.columns where table_schema = %s and table_name = %s",
         (schema, name),
     )
     existing = {row[0] for row in cur.fetchall()}

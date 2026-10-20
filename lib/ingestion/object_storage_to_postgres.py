@@ -134,7 +134,10 @@ def load_csv(
                 rows = cur.rowcount
 
                 load_log.succeed(
-                    cur, load_id, rows_loaded=rows, rows_replaced=replaced,
+                    cur,
+                    load_id,
+                    rows_loaded=rows,
+                    rows_replaced=replaced,
                     schema_drift=extra_columns,
                 )
     except Exception as error:
@@ -147,7 +150,11 @@ def load_csv(
 
     log.info(
         "Load %s: loaded %s rows from %s into %s, replacing %s",
-        load_id, rows, source_uri, table, replaced,
+        load_id,
+        rows,
+        source_uri,
+        table,
+        replaced,
     )
     return rows
 
@@ -161,7 +168,9 @@ def create_raw_table(cur: Cursor, table: str, columns: list[str]) -> None:
         sql.SQL("{} {}").format(sql.Identifier(c), sql.SQL(definition))
         for c, definition in METADATA_COLUMNS.items()
     ]
-    cur.execute(sql.SQL("create table if not exists {} ({})").format(table_id, sql.SQL(", ").join(definitions)))
+    cur.execute(
+        sql.SQL("create table if not exists {} ({})").format(table_id, sql.SQL(", ").join(definitions))
+    )
     # Keep the loader's delete of an earlier load fast as the table grows, and the
     # reads of incremental models downstream, which select the loads since their last run.
     for column in ("_source_file", "_load_id"):

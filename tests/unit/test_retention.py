@@ -18,9 +18,9 @@ from lib.transformation.dbt import core_retention
     "configured, core, expected",
     [
         (None, {"fct": 365, "agg": 30}, 365),  # as long as the longest-lived model
-        (400, {"fct": 365}, 400),              # longer if configured
+        (400, {"fct": 365}, 400),  # longer if configured
         (None, {"fct": 365, "dim": None}, None),  # a model kept forever keeps raw forever
-        (None, {}, None),                      # no core models: kept forever
+        (None, {}, None),  # no core models: kept forever
     ],
 )
 def test_raw_retention(configured, core, expected):

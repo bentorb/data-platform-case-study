@@ -45,7 +45,8 @@ def dbt_project(tmp_path_factory):
     def dbt(*args):
         return subprocess.run(
             [DBT_EXECUTABLE_PATH, *args, "--project-dir", str(project), "--profiles-dir", str(project)],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
 
     return dbt
@@ -61,18 +62,28 @@ def create_missing_raw_tables():
 
 def missing_models(dbt):
     """The models whose relation does not exist in the warehouse."""
-    listed = dbt("ls", "--resource-type", "model", "--output", "json", "--output-keys", "name", "config", "--quiet")
+    listed = dbt(
+        "ls", "--resource-type", "model", "--output", "json", "--output-keys", "name", "config", "--quiet"
+    )
     assert listed.returncode == 0, listed.stdout + listed.stderr
     models = [json.loads(line) for line in listed.stdout.splitlines() if line.startswith("{")]
     # As dbt's user, with dbt's settings: information_schema only lists the tables a
     # user has privileges on.
     with psycopg.connect(
-        host=os.environ["DBT_WAREHOUSE_HOST"], port=os.environ["DBT_WAREHOUSE_PORT"],
-        dbname=os.environ["DBT_WAREHOUSE_DBNAME"], user=os.environ["DBT_WAREHOUSE_USER"],
+        host=os.environ["DBT_WAREHOUSE_HOST"],
+        port=os.environ["DBT_WAREHOUSE_PORT"],
+        dbname=os.environ["DBT_WAREHOUSE_DBNAME"],
+        user=os.environ["DBT_WAREHOUSE_USER"],
         password=os.environ["DBT_WAREHOUSE_PASSWORD"],
     ) as conn:
-        existing = set(conn.execute("select table_schema, table_name from information_schema.tables").fetchall())
-    return [m["name"] for m in models if (m["config"]["schema"], m["config"].get("alias") or m["name"]) not in existing]
+        existing = set(
+            conn.execute("select table_schema, table_name from information_schema.tables").fetchall()
+        )
+    return [
+        m["name"]
+        for m in models
+        if (m["config"]["schema"], m["config"].get("alias") or m["name"]) not in existing
+    ]
 
 
 def test_dbt_unit_tests(dbt_project):

@@ -35,7 +35,9 @@ def posts(monkeypatch):
 
 
 def context(owner):
-    ti = SimpleNamespace(dag_id="orders_pipeline", task_id="load", run_id="run_1", try_number=3, log_url="http://log")
+    ti = SimpleNamespace(
+        dag_id="orders_pipeline", task_id="load", run_id="run_1", try_number=3, log_url="http://log"
+    )
     return {"ti": ti, "task": SimpleNamespace(owner=owner), "exception": ValueError("boom")}
 
 
@@ -53,7 +55,9 @@ def test_alert_routing(monkeypatch, posts, owner, webhooks, default, expected_ur
     callbacks.notify_failure(context(owner))
     assert [url for url, _ in posts] == [expected_url]
     message = posts[0][1]
-    assert "orders_pipeline.load" in message and f"Owner: {owner}" in message and "ValueError: boom" in message
+    assert (
+        "orders_pipeline.load" in message and f"Owner: {owner}" in message and "ValueError: boom" in message
+    )
 
 
 def test_no_webhook_only_logs(monkeypatch, posts):

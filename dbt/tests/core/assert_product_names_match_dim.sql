@@ -16,7 +16,7 @@ select
     stg._source_row
 from {{ ref('stg_customer_transactions') }} as stg
 inner join {{ ref('dim_products') }} as dim_products
-    on dim_products.product_id = stg.product_id
-   and stg.transaction_date >= dim_products.valid_from
-   and stg.transaction_date < dim_products.valid_to
+    on stg.product_id = dim_products.product_id
+        and stg.transaction_date >= dim_products.valid_from
+        and stg.transaction_date < dim_products.valid_to
 where stg.product_name <> dim_products.product_name

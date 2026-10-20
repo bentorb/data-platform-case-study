@@ -4,7 +4,6 @@ Runs once per `docker compose up`. Safe to re-run.
 """
 
 from botocore.exceptions import ClientError
-
 from s3_client import BUCKET, get_client
 
 s3 = get_client()

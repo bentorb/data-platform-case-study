@@ -18,7 +18,7 @@ def test_read_header_leaves_the_stream_at_the_data():
 
 
 def test_read_header_drops_a_byte_order_mark():
-    assert read_header(io.BytesIO("﻿id,amount\n".encode("utf-8"))) == ["id", "amount"]
+    assert read_header(io.BytesIO("﻿id,amount\n".encode())) == ["id", "amount"]
 
 
 def test_read_header_of_an_empty_file():

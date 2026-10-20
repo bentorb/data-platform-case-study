@@ -62,5 +62,9 @@ def log_retry(context) -> None:
     error = context.get("exception")
     log.warning(
         "Task %s.%s will be retried after attempt %s of run %s: %s",
-        ti.dag_id, ti.task_id, ti.try_number, ti.run_id, error,
+        ti.dag_id,
+        ti.task_id,
+        ti.try_number,
+        ti.run_id,
+        error,
     )

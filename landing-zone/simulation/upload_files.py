@@ -7,14 +7,14 @@ Not part of the platform itself; in production the source system or the extracti
 deliver the files, one per day.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from s3_client import BUCKET, get_client
 
 DATA_DIR = Path("/data")
 
-yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).date().isoformat()
+yesterday = (datetime.now(UTC) - timedelta(days=1)).date().isoformat()
 s3 = get_client()
 
 for path in sorted(DATA_DIR.glob("*.csv")):

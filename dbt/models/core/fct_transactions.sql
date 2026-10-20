@@ -40,10 +40,10 @@ from {{ ref('stg_customer_transactions') }} as stg
 -- The product's version on the transaction's date. A left join, so a transaction
 -- without one fails the not-null constraint instead of being dropped.
 left join {{ ref('dim_products') }} as dim_products
-    on dim_products.product_id = stg.product_id
-   and stg.transaction_date >= dim_products.valid_from
-   and stg.transaction_date < dim_products.valid_to
+    on stg.product_id = dim_products.product_id
+        and stg.transaction_date >= dim_products.valid_from
+        and stg.transaction_date < dim_products.valid_to
 where cardinality(stg.dq_errors) = 0
-{% if is_incremental() %}
-    and stg._load_id > {{ load_watermark() }}
-{% endif %}
+    {% if is_incremental() %}
+        and stg._load_id > {{ load_watermark() }}
+    {% endif %}

@@ -14,6 +14,6 @@ select
     max(fct.transaction_date) as last_sale_date
 from {{ ref('fct_transactions') }} as fct
 inner join {{ ref('dim_products') }} as dim_products
-    on dim_products.product_id = fct.product_id
-   and dim_products.is_current
+    on fct.product_id = dim_products.product_id
+        and dim_products.is_current
 group by fct.product_id, dim_products.product_name

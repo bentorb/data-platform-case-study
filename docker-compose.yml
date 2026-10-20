@@ -26,8 +26,12 @@ x-airflow-common: &airflow-common
     # pipeline DAG files only call lib/pipelines. The folder holds DAG files only, as
     # shared code lives in lib/ (when it shares the folder, list it in .airflowignore).
     AIRFLOW__CORE__DAG_DISCOVERY_SAFE_MODE: "false"
-    # Optional: task failures are posted to this webhook (lib/orchestration/callbacks.py).
+    # Optional: task failures are posted to their owner's webhook, a connection named
+    # alerts_<owner>, or else to ALERT_WEBHOOK_URL (lib/orchestration/callbacks.py).
     ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+    AIRFLOW_CONN_ALERTS_DATA_PLATFORM: >-
+      {"conn_type": "generic",
+       "extra": {"webhook_url": "${DATA_PLATFORM_ALERT_WEBHOOK_URL:-}"}}
     # Landing zone (S3-compatible) read by ingestion tasks (conn_id: landing_zone_s3).
     AIRFLOW_CONN_LANDING_ZONE_S3: >-
       {"conn_type": "aws",

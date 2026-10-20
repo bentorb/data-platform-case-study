@@ -8,11 +8,12 @@ lib/ingestion/config.py, transformation in lib/transformation/config.py.
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from pathlib import Path
 
 import yaml
-from pydantic import ValidationError
+from pydantic import ValidationError, field_validator
 
 from lib.ingestion.config import IngestionConfig
 from lib.transformation.config import TransformationConfig
@@ -24,11 +25,20 @@ PIPELINES_PATH = Path(__file__).resolve().parents[2] / "pipelines"
 
 class PipelineConfig(StrictModel):
     description: str
+    # The team that owns the pipeline: its tasks' owner, and whose alert webhook
+    # (connection alerts_<owner>) failures go to; see lib/orchestration/callbacks.py.
     owner: str
     schedule: str
     start_date: date
     ingestion: IngestionConfig
     transformation: TransformationConfig = TransformationConfig()
+
+    @field_validator("owner")
+    @classmethod
+    def _owner_name(cls, owner: str) -> str:
+        if not re.fullmatch(r"[a-z][a-z0-9-]*", owner):
+            raise ValueError("must be lowercase letters, digits and hyphens, e.g. sales-data")
+        return owner
 
 
 class InvalidConfigError(ValueError):

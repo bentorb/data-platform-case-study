@@ -66,6 +66,19 @@ models:
       every staging check are included; rejected ones stay in
       stg_customer_transactions with their dq_errors. Built incrementally from the
       loads since the last run; a file delivered again replaces its earlier rows.
+    data_tests:
+      # Data freshness: each daily run loads the previous day's transactions, so the
+      # newest one is at most 2 days old. Warns, not fails: stale data is still
+      # correct, and a source sending old extracts is for its owner to look into.
+      - dbt_utils.recency:
+          name: fct_transactions_is_recent
+          arguments:
+            field: transaction_date
+            datepart: day
+            interval: 2
+            ignore_time_component: true
+          config:
+            severity: warn
     columns:
       - name: transaction_id
         description: Identifier of the transaction.

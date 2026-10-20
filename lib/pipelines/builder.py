@@ -9,7 +9,8 @@ breaks that pipeline's DAG.
 from __future__ import annotations
 
 import pendulum
-from airflow.sdk import DAG, dag, task
+from airflow.sdk import DAG, dag, get_current_context, task
+from airflow.sdk.exceptions import AirflowFailException
 from airflow.timetables.interval import CronDataIntervalTimetable
 
 from lib.ingestion.object_storage_to_postgres import load_csv
@@ -61,9 +62,9 @@ def build_pipeline(name: str) -> DAG:
     )
     def pipeline():
         @task(task_id=f"load_{ingestion.target.table.replace('.', '_')}")
-        def load_raw_table(source_uri: str) -> int:
+        def load_raw_table() -> int:
             return load_csv(
-                source_uri=source_uri,
+                source_uri=render_source_uri(ingestion.source.uri, get_current_context()),
                 source_conn_id=ingestion.source.conn_id,
                 postgres_conn_id=ingestion.target.conn_id,
                 table=ingestion.target.table,
@@ -71,8 +72,7 @@ def build_pipeline(name: str) -> DAG:
             )
 
         # Build and test in core, then publish to live once every test has passed.
-        # The source URI is templated, e.g. with the day the run covers.
-        load = load_raw_table(ingestion.source.uri)
+        load = load_raw_table()
         transform = build_dbt_task_group(select=select)
         models = selected_models(transform)
         publish = build_dbt_publish_task(models)
@@ -115,3 +115,32 @@ def raw_retention_days(name: str, configured: int | None, core: dict[str, int | 
             f" the core models built on its table ({needed} days)"
         )
     return configured or needed
+
+
+def render_source_uri(uri: str, context) -> str:
+    """Renders a source URI's template for the current run, e.g. with the day it covers.
+
+    A template that cannot be rendered fails the task at once, without retrying: it would
+    fail the same way on every attempt. The error says why, e.g. a typo in the template.
+    A common cause is a run without a logical date, the default for manual runs in
+    Airflow 3, whose template needs the run's dates (e.g. `{{ data_interval_start | ds }}`):
+    for such runs, the error also says how to give the run a date. Templates that do not
+    need the dates, such as `{{ params.feed }}`, render in any run.
+
+    Context values that are None are left out: templates are rendered strictly, so one
+    that uses them fails, rather than putting "None" in the path (Airflow's `ds` filter,
+    for instance, renders a missing date as "None").
+    """
+    defined = {key: value for key, value in context.items() if value is not None}
+    try:
+        return context["task"].render_template(uri, defined)
+    except Exception as error:
+        message = f"Cannot render the source URI {uri!r}: {error}."
+        # A template error or a missing date: without a date, the hint covers the latter.
+        if context.get("data_interval_start") is None:
+            message += (
+                " This run has no logical date: if the source URI depends on the run's dates,"
+                " trigger the DAG with the day as its logical date (e.g. airflow dags trigger"
+                " <dag_id> --logical-date 2026-10-19), or clear the existing run of that day."
+            )
+        raise AirflowFailException(message) from error

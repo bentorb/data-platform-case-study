@@ -196,7 +196,11 @@ services:
     image: data-platform-airflow-test:local
     profiles: ["test"]
     # The Airflow services' settings, e.g. the warehouse connections the tests use.
-    environment: *airflow-common-env
+    environment:
+      <<: *airflow-common-env
+      # Cosmos caches dbt ls results in Airflow's metadata database: off, so DAGs can
+      # be parsed without the stack running.
+      AIRFLOW__COSMOS__ENABLE_CACHE: "false"
     entrypoint: ["python", "-m", "pytest"]
     command: ["tests"]
     working_dir: /opt/data-platform
@@ -204,6 +208,7 @@ services:
       - ./lib:/opt/data-platform/lib:ro
       - ./pipelines:/opt/data-platform/pipelines:ro
       - ./dbt:/opt/dbt:ro
+      - ./airflow/dags:/opt/airflow/dags:ro
       - ./tests:/opt/data-platform/tests:ro
       - ./pyproject.toml:/opt/data-platform/pyproject.toml:ro
     restart: "no"

@@ -3,11 +3,14 @@
 from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 from airflow.sdk import DAG
 
+from lib.orchestration.defaults import DEFAULT_ARGS
+
 with DAG(
     dag_id="warehouse_connection_check",
     description="Checks that Airflow can connect to the warehouse database",
     schedule=None,
     catchup=False,
+    default_args={**DEFAULT_ARGS, "owner": "data-platform"},
     tags=["smoke-test"],
 ):
     SQLExecuteQueryOperator(

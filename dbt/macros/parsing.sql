@@ -32,14 +32,29 @@
 
 
 {#
-    Dates as YYYY-MM-DD or DD-MM-YYYY. The pattern checks month and day ranges; an
-    impossible date that passes it (e.g. 2023-02-30) still fails the query, loudly.
+    Dates as YYYY-MM-DD or DD-MM-YYYY, years 1000 to 9999. A date that matches a format
+    but does not exist (e.g. 2023-02-30) is null, like any other invalid value: the day
+    is checked against the month's length before converting, as to_date would fail the
+    query. Nested CASEs, because Postgres does not guarantee the order of AND's operands.
 #}
 {% macro parse_date(column) -%}
     case
-        when {{ column }} ~ '^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$'
-            then to_date({{ column }}, 'YYYY-MM-DD')
-        when {{ column }} ~ '^(0[1-9]|[12][0-9]|3[01])-(0[1-9]|1[0-2])-[0-9]{4}$'
-            then to_date({{ column }}, 'DD-MM-YYYY')
+        when {{ column }} ~ '^[1-9][0-9]{3}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$'
+            then case
+                when {{ day_exists('substr(' ~ column ~ ', 1, 4)', 'substr(' ~ column ~ ', 6, 2)', 'substr(' ~ column ~ ', 9, 2)') }}
+                    then to_date({{ column }}, 'YYYY-MM-DD')
+            end
+        when {{ column }} ~ '^(0[1-9]|[12][0-9]|3[01])-(0[1-9]|1[0-2])-[1-9][0-9]{3}$'
+            then case
+                when {{ day_exists('substr(' ~ column ~ ', 7, 4)', 'substr(' ~ column ~ ', 4, 2)', 'substr(' ~ column ~ ', 1, 2)') }}
+                    then to_date({{ column }}, 'DD-MM-YYYY')
+            end
     end
+{%- endmacro %}
+
+
+{# Whether a day exists in its month, given valid year, month and day digits. #}
+{% macro day_exists(year, month, day) -%}
+    {{ day }}::integer <= extract(day from make_date({{ year }}::integer, {{ month }}::integer, 1)
+                                          + interval '1 month' - interval '1 day')
 {%- endmacro %}

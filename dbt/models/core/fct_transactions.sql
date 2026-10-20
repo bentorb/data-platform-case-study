@@ -5,8 +5,8 @@
 -- Incremental: each run adds the valid rows of the loads since the last run, after
 -- deleting the rows of files those loads delivered again (macros/incremental_loads.sql).
 -- A full refresh rebuilds the same table from all of raw; a full refresh of
--- dim_products, which can change its keys, must include this model (dim_products+). The indexes, created with
--- the table, keep the pre-hook's delete and the watermark fast.
+-- dim_products, which can change its keys, must include this model (dim_products+).
+-- The indexes, created with the table, keep the pre-hook's delete and the watermark fast.
 
 {{
     config(

@@ -8,6 +8,7 @@ written inside the load's transaction, so the data and its log entry commit toge
 from __future__ import annotations
 
 import logging
+from typing import NamedTuple
 
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from psycopg import Cursor
@@ -62,16 +63,21 @@ def skip(cur: Cursor, load_id: int, *, schema_drift: list[str], checksum: str) -
     )
 
 
-def latest_success(cur: Cursor, *, target_table: str, source_file: str) -> tuple[int, str | None] | None:
-    """The load_id and checksum of the latest successful load of a file into a table, or
-    None if it was never loaded."""
+class Load(NamedTuple):
+    load_id: int
+    checksum: str | None
+
+
+def latest_success(cur: Cursor, *, target_table: str, source_file: str) -> Load | None:
+    """The latest successful load of a file into a table, or None if it was never loaded."""
     cur.execute(
         "select load_id, checksum from audit.load_log"
         " where target_table = %s and source_file = %s and status = 'success'"
         " order by load_id desc limit 1",
         (target_table, source_file),
     )
-    return cur.fetchone()
+    row = cur.fetchone()
+    return Load(*row) if row else None
 
 
 def fail(hook: PostgresHook, load_id: int, error: BaseException) -> None:

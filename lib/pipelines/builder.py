@@ -23,12 +23,14 @@ from lib.transformation.dbt import (
     core_retention,
     selected_models,
 )
+from lib.warehouse import TableName
 
 
 def build_pipeline(name: str) -> DAG:
     """Returns the DAG of the pipeline `name`, with dag_id <name>_pipeline."""
     config = load_config(name)
     ingestion = config.ingestion
+    target = TableName.parse(ingestion.target.table)
     # By default, the models built from the target table: its dbt source is named
     # after its schema (e.g. source('raw', 'customer_transactions')).
     select = config.transformation.select or [f"source:{ingestion.target.table}+"]
@@ -60,7 +62,7 @@ def build_pipeline(name: str) -> DAG:
         tags=[name, "ingestion", "dbt"],
     )
     def pipeline():
-        @task(task_id=f"load_{ingestion.target.table.replace('.', '_')}")
+        @task(task_id=f"load_{target.slug}")
         def load_raw_table() -> int:
             return load_csv(
                 source_uri=render_source_uri(ingestion.source.uri, get_current_context()),
@@ -83,7 +85,7 @@ def build_pipeline(name: str) -> DAG:
         raw_days = raw_retention_days(name, ingestion.retention_days, core_retention(transform))
         if raw_days is not None:
 
-            @task(task_id=f"expire_{ingestion.target.table.replace('.', '_')}")
+            @task(task_id=f"expire_{target.slug}")
             def expire_raw_table() -> int:
                 return expire_raw_files(
                     postgres_conn_id=ingestion.target.conn_id, table=ingestion.target.table, days=raw_days

@@ -20,18 +20,21 @@ from psycopg import Cursor, DataError, sql
 
 from lib.ingestion import load_log, partitioning, schema_drift
 from lib.ingestion.partitioning import PartitionBy
+from lib.warehouse import TableName, advisory_xact_lock
 
 log = logging.getLogger(__name__)
 
 CHUNK_SIZE = 1024 * 1024
 
 # Lineage columns added to every loaded table, after the source columns.
-METADATA_COLUMNS = {
+LINEAGE_COLUMNS = {
     "_source_file": "text not null",
     "_source_row": "bigint not null",
     "_loaded_at": "timestamptz not null",
     "_load_id": "bigint not null",  # the audit.load_log entry of the load
 }
+# The temporary table each load copies the file into.
+INCOMING = sql.Identifier("_incoming")
 
 
 def load_csv(
@@ -69,10 +72,7 @@ def load_csv(
     a file that has not been delivered (FileNotFoundError), are raised as they are and
     retried.
     """
-    schema, name = table.split(".")
-    table_id = sql.Identifier(schema, name)
-    incoming_id = sql.Identifier("_incoming")
-    column_list = sql.SQL(", ").join(map(sql.Identifier, columns))
+    target = TableName.parse(table)
     source = ObjectStoragePath(source_uri, conn_id=source_conn_id)
     hook = PostgresHook(postgres_conn_id=postgres_conn_id)
 
@@ -90,44 +90,22 @@ def load_csv(
                 stream = HashingStream(raw_stream)
                 # Serialises loads of the same file into the same table: without it, two
                 # concurrent loads could both delete before either inserts, leaving both
-                # copies. Released automatically when the transaction ends.
-                cur.execute(
-                    "select pg_advisory_xact_lock(hashtextextended(%s, 0))",
-                    (f"{table}|{source_uri}",),
-                )
+                # copies.
+                advisory_xact_lock(cur, f"{table}|{source_uri}")
 
                 # Compare the file and the table with the expected columns before
                 # touching any data. Reading the header leaves the stream at the data.
                 header = schema_drift.read_header(stream)
-                extra_columns = schema_drift.check_header(header, columns, list(METADATA_COLUMNS))
-                schema_drift.check_table(cur, schema, name, columns + list(METADATA_COLUMNS))
+                extra_columns = schema_drift.check_header(header, columns, list(LINEAGE_COLUMNS))
+                schema_drift.check_table(cur, target.schema, target.name, columns + list(LINEAGE_COLUMNS))
 
-                # COPY into a temporary table with the file's own columns, then insert
-                # the expected ones by name, adding the metadata. The identity column
-                # numbers the rows in file order; the table is dropped when the
-                # transaction ends. The header was already read, so COPY gets data only.
-                header_columns = [sql.Identifier(c) for c in header]
-                cur.execute(
-                    sql.SQL(
-                        "create temp table {} (_source_row bigint generated always as identity, {})"
-                        " on commit drop"
-                    ).format(
-                        incoming_id,
-                        sql.SQL(", ").join(sql.SQL("{} text").format(c) for c in header_columns),
-                    )
-                )
-                copy_sql = sql.SQL(
-                    "copy {} ({}) from stdin with (format csv, header false, encoding 'UTF8')"
-                ).format(incoming_id, sql.SQL(", ").join(header_columns))
-                with cur.copy(copy_sql) as copy:
-                    while chunk := stream.read(CHUNK_SIZE):
-                        copy.write(chunk)
+                copy_to_incoming(cur, stream, header)
                 checksum = stream.hexdigest()
 
                 # A file identical to its latest successful load, whose rows are still
                 # here, changes nothing: skip it. Within the advisory lock, so two loads
                 # of the file cannot both decide it changed.
-                identical_to = _identical_load(cur, table, source_uri, checksum)
+                identical_to = _identical_load(cur, target, source_uri, checksum)
                 if identical_to is not None:
                     load_log.skip(cur, load_id, schema_drift=extra_columns, checksum=checksum)
                     log.info(
@@ -139,25 +117,7 @@ def load_csv(
                     )
                     return 0
 
-                # Replace the rows of any earlier load of this file. Same transaction as the
-                # insert, so readers never see the table without them.
-                cur.execute(
-                    sql.SQL("delete from {} where _source_file = %s").format(table_id),
-                    (source_uri,),
-                )
-                replaced = cur.rowcount
-
-                # now() is the transaction's start time, so all rows of a load share it.
-                cur.execute(
-                    sql.SQL(
-                        "insert into {} ({}, _source_file, _source_row, _loaded_at, _load_id)"
-                        " select {}, %s::text, _source_row, now(), %s::bigint"
-                        " from {} order by _source_row"
-                    ).format(table_id, column_list, column_list, incoming_id),
-                    (source_uri, load_id),
-                )
-                rows = cur.rowcount
-
+                replaced, rows = replace_file_rows(cur, target, columns, source_uri, load_id)
                 load_log.succeed(
                     cur,
                     load_id,
@@ -185,6 +145,48 @@ def load_csv(
     return rows
 
 
+def copy_to_incoming(cur: Cursor, stream: BinaryIO, header: list[str]) -> None:
+    """COPYs the rest of a CSV stream, after its header, into a temporary table with the
+    file's own columns, as text. Its identity column numbers the rows in file order; the
+    table is dropped when the transaction ends."""
+    header_columns = sql.SQL(", ").join(map(sql.Identifier, header))
+    cur.execute(
+        sql.SQL(
+            "create temp table {} (_source_row bigint generated always as identity, {}) on commit drop"
+        ).format(INCOMING, sql.SQL(", ").join(sql.SQL("{} text").format(sql.Identifier(c)) for c in header))
+    )
+    copy_sql = sql.SQL("copy {} ({}) from stdin with (format csv, header false, encoding 'UTF8')").format(
+        INCOMING, header_columns
+    )
+    with cur.copy(copy_sql) as copy:
+        while chunk := stream.read(CHUNK_SIZE):
+            copy.write(chunk)
+
+
+def replace_file_rows(
+    cur: Cursor, target: TableName, columns: list[str], source_uri: str, load_id: int
+) -> tuple[int, int]:
+    """Replaces the rows of any earlier load of the file with the incoming ones, by name,
+    adding the lineage columns. In the load's transaction, so readers never see the table
+    without them. Returns the rows replaced and the rows loaded."""
+    cur.execute(
+        sql.SQL("delete from {} where _source_file = %s").format(target.identifier),
+        (source_uri,),
+    )
+    replaced = cur.rowcount
+    column_list = sql.SQL(", ").join(map(sql.Identifier, columns))
+    # now() is the transaction's start time, so all rows of a load share it.
+    cur.execute(
+        sql.SQL(
+            "insert into {} ({}, _source_file, _source_row, _loaded_at, _load_id)"
+            " select {}, %s::text, _source_row, now(), %s::bigint"
+            " from {} order by _source_row"
+        ).format(target.identifier, column_list, column_list, INCOMING),
+        (source_uri, load_id),
+    )
+    return replaced, cur.rowcount
+
+
 def prepare_raw_table(hook: PostgresHook, table: str, columns: list[str], partition_by: PartitionBy) -> None:
     """Creates the raw table if it does not exist, and the partitions of the current and
     next periods, after checking that an existing table is partitioned as configured.
@@ -192,7 +194,7 @@ def prepare_raw_table(hook: PostgresHook, table: str, columns: list[str], partit
     loads of different files into the table may start at once, and would otherwise
     both create the same new partition."""
     with hook.get_conn() as conn, conn.cursor() as cur:
-        cur.execute("select pg_advisory_xact_lock(hashtextextended(%s, 0))", (f"{table}|partitions",))
+        advisory_xact_lock(cur, f"{table}|partitions")
         partitioning.check_partitioning(cur, table, partition_by)
         create_raw_table(cur, table, columns, partition_by)
         if partition_by != "none":
@@ -204,16 +206,15 @@ def create_raw_table(cur: Cursor, table: str, columns: list[str], partition_by: 
     """Creates a raw table, if it does not exist: the source columns as text, then the
     lineage columns, partitioned by load time unless partition_by is none, with the
     indexes that keep loads and incremental reads fast (created on every partition)."""
-    schema, name = table.split(".")
-    table_id = sql.Identifier(schema, name)
+    target = TableName.parse(table)
     definitions = [sql.SQL("{} text").format(sql.Identifier(c)) for c in columns] + [
         sql.SQL("{} {}").format(sql.Identifier(c), sql.SQL(definition))
-        for c, definition in METADATA_COLUMNS.items()
+        for c, definition in LINEAGE_COLUMNS.items()
     ]
     partitioned = sql.SQL(" partition by range (_loaded_at)") if partition_by != "none" else sql.SQL("")
     cur.execute(
         sql.SQL("create table if not exists {} ({}){}").format(
-            table_id, sql.SQL(", ").join(definitions), partitioned
+            target.identifier, sql.SQL(", ").join(definitions), partitioned
         )
     )
     # Keep the loader's delete of an earlier load fast as the table grows, and the
@@ -221,7 +222,7 @@ def create_raw_table(cur: Cursor, table: str, columns: list[str], partition_by: 
     for column in ("_source_file", "_load_id"):
         cur.execute(
             sql.SQL("create index if not exists {} on {} ({})").format(
-                sql.Identifier(f"{name}_{column}_idx"), table_id, sql.Identifier(column)
+                sql.Identifier(f"{target.name}_{column}_idx"), target.identifier, sql.Identifier(column)
             )
         )
 
@@ -248,15 +249,14 @@ class HashingStream:
         return self._hash.hexdigest()
 
 
-def _identical_load(cur: Cursor, table: str, source_uri: str, checksum: str) -> int | None:
+def _identical_load(cur: Cursor, target: TableName, source_uri: str, checksum: str) -> int | None:
     """The latest successful load of the file into the table, if its checksum is the same
     and its rows are still in the table (retention, for instance, may have expired them)."""
-    latest = load_log.latest_success(cur, target_table=table, source_file=source_uri)
-    if latest is None or latest[1] != checksum:
+    latest = load_log.latest_success(cur, target_table=str(target), source_file=source_uri)
+    if latest is None or latest.checksum != checksum:
         return None
-    schema, name = table.split(".")
     cur.execute(
-        sql.SQL("select exists (select 1 from {} where _load_id = %s)").format(sql.Identifier(schema, name)),
-        (latest[0],),
+        sql.SQL("select exists (select 1 from {} where _load_id = %s)").format(target.identifier),
+        (latest.load_id,),
     )
-    return latest[0] if cur.fetchone()[0] else None
+    return latest.load_id if cur.fetchone()[0] else None

@@ -6,8 +6,10 @@
 
 {#
     The latest load in the model; loads after it are new. 0 while the model has no rows.
-    Assumes loads commit in load_id order, true while one load runs at a time
-    (max_active_runs=1, one load task).
+    Assumes a table's loads commit in load_id order: a load committed after a later one
+    would be below the watermark, and never processed. True while one pipeline loads
+    each raw table, as its load tasks run one after another (depends_on_past, see
+    lib/pipelines/builder.py).
 #}
 {% macro load_watermark() %}
     (select coalesce(max(_load_id), 0) from {{ this }})

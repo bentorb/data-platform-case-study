@@ -13,21 +13,21 @@ insert into audit.dq_load_summary
     (load_id, model, total_rows, rows_with_errors, rows_with_warnings, error_rate)
 select
     _load_id,
-    '{{ model.identifier }}',
+    {{ sql_text_literal(model.identifier) }},
     count(*),
     count(*) filter (where cardinality(dq_errors) > 0),
     count(*) filter (where cardinality(dq_warnings) > 0),
     round(count(*) filter (where cardinality(dq_errors) > 0)::numeric / count(*), 4)
 from {{ model }}
 where _load_id not in (
-    select load_id from audit.dq_load_summary where model = '{{ model.identifier }}'
+    select load_id from audit.dq_load_summary where model = {{ sql_text_literal(model.identifier) }}
 )
 group by _load_id;
 
 insert into audit.dq_issue_counts (load_id, model, kind, code, affected_rows)
 select
     staged._load_id,
-    '{{ model.identifier }}',
+    {{ sql_text_literal(model.identifier) }},
     issues.kind,
     issues.code,
     count(*)
@@ -38,7 +38,7 @@ cross join lateral (
     select 'warning' as kind, code from unnest(staged.dq_warnings) as code
 ) as issues
 where staged._load_id not in (
-    select load_id from audit.dq_issue_counts where model = '{{ model.identifier }}'
+    select load_id from audit.dq_issue_counts where model = {{ sql_text_literal(model.identifier) }}
 )
 group by staged._load_id, issues.kind, issues.code
 

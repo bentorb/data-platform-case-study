@@ -19,6 +19,7 @@ from typing import Literal
 from psycopg import Cursor, sql
 
 from lib.ingestion.schema_drift import SchemaDriftError
+from lib.warehouse import TableName
 
 PartitionBy = Literal["day", "month", "none"]
 
@@ -85,8 +86,8 @@ def partitioning_of(cur: Cursor, schema: str, name: str) -> tuple[str, list[str]
 
 def check_partitioning(cur: Cursor, table: str, partition_by: PartitionBy) -> None:
     """Fails if an existing table is partitioned otherwise than its config says."""
-    schema, name = table.split(".")
-    existing, _ = partitioning_of(cur, schema, name)
+    target = TableName.parse(table)
+    existing, _ = partitioning_of(cur, target.schema, target.name)
     if existing == "missing" or existing == partition_by or (existing == "empty" and partition_by != "none"):
         return
     actual = {"none": "not partitioned", "empty": "partitioned", "mixed": "partitioned by mixed periods"}
@@ -98,14 +99,14 @@ def check_partitioning(cur: Cursor, table: str, partition_by: PartitionBy) -> No
 
 def create_partitions(cur: Cursor, table: str, partition_by: PartitionBy, now: datetime) -> None:
     """Creates the partitions of the current period and the next one, if missing."""
-    schema, name = table.split(".")
-    current = period(name, now, partition_by)
-    for p in (current, period(name, current.end, partition_by)):
+    target = TableName.parse(table)
+    current = period(target.name, now, partition_by)
+    for p in (current, period(target.name, current.end, partition_by)):
         # Literals, not query parameters: Postgres does not accept parameters in DDL.
         cur.execute(
             sql.SQL("create table if not exists {} partition of {} for values from ({}) to ({})").format(
-                sql.Identifier(schema, p.name),
-                sql.Identifier(schema, name),
+                target.in_schema(p.name),
+                target.identifier,
                 sql.Literal(p.start.isoformat()),
                 sql.Literal(p.end.isoformat()),
             )
@@ -114,13 +115,14 @@ def create_partitions(cur: Cursor, table: str, partition_by: PartitionBy, now: d
 
 def expired_partitions(cur: Cursor, table: str, cutoff: datetime) -> list[str]:
     """The partitions of a table whose whole period ended before `cutoff`."""
-    schema, name = table.split(".")
-    granularity, partitions = partitioning_of(cur, schema, name)
+    target = TableName.parse(table)
+    granularity, partitions = partitioning_of(cur, target.schema, target.name)
     if granularity not in SUFFIX_FORMATS:
         return []
     expired = []
     for partition in partitions:
-        start = datetime.strptime(partition[len(name) + 2 :], SUFFIX_FORMATS[granularity]).replace(tzinfo=UTC)
-        if period(name, start, granularity).end <= cutoff:
+        suffix = partition[len(target.name) + 2 :]
+        start = datetime.strptime(suffix, SUFFIX_FORMATS[granularity]).replace(tzinfo=UTC)
+        if period(target.name, start, granularity).end <= cutoff:
             expired.append(partition)
     return expired

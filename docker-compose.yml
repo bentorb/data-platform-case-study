@@ -28,8 +28,9 @@ x-airflow-common: &airflow-common
     # pipeline DAG files only call lib/pipelines. The folder holds DAG files only, as
     # shared code lives in lib/ (when it shares the folder, list it in .airflowignore).
     AIRFLOW__CORE__DAG_DISCOVERY_SAFE_MODE: "false"
-    # Optional: task failures are posted to their owner's webhook, a connection named
-    # alerts_<owner>, or else to ALERT_WEBHOOK_URL (lib/orchestration/callbacks.py).
+    # Optional: task failures and dbt test warnings are posted to their owner's webhook,
+    # a connection named alerts_<owner>, or else to ALERT_WEBHOOK_URL
+    # (lib/orchestration/callbacks.py).
     ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
     AIRFLOW_CONN_ALERTS_DATA_PLATFORM: >-
       {"conn_type": "generic",

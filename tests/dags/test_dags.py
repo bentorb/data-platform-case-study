@@ -11,6 +11,7 @@ from airflow.timetables.interval import CronDataIntervalTimetable
 
 from lib.orchestration.callbacks import notify_failure, notify_warning
 from lib.pipelines.config import PIPELINES_PATH, load_config
+from lib.warehouse import TableName
 
 PIPELINES = sorted(path.stem for path in PIPELINES_PATH.glob("*.yml"))
 
@@ -53,7 +54,7 @@ def test_every_dag_follows_the_platform_rules(dagbag):
 def test_pipeline_dag(dagbag, name):
     dag = dagbag.dags[f"{name}_pipeline"]
     config = load_config(name)
-    table = config.ingestion.target.table.replace(".", "_")
+    table = TableName.parse(config.ingestion.target.table).slug
 
     # Each run covers a whole interval.
     assert isinstance(dag.timetable, CronDataIntervalTimetable)

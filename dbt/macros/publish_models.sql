@@ -60,39 +60,53 @@
     {%- do statements.append("select pg_advisory_xact_lock(" ~ model_lock_key(model.source) ~ ")") -%}
 {%- endfor -%}
 {%- for model in plan -%}
-    {%- set log_key = "invocation_id = " ~ sql_text_literal(invocation_id) ~ " and model = " ~ sql_text_literal(model.name) -%}
+    {%- set target_table = model.target.schema ~ '.' ~ model.target.identifier -%}
     {%- if not model.exists -%}
         {%- do statements.append("create table " ~ model.target ~ " (like " ~ model.source ~ " including all)") -%}
     {%- endif -%}
-    {#- Rows that changed or disappeared, then rows that changed or are new, each
-        counted into the publish log. Two statements, so the insert sees the delete. -#}
-    {%- do statements.append(
-        "with deleted as (delete from " ~ model.target ~ " where (" ~ model.key ~ ") in ("
-        ~ "select " ~ model.key ~ " from (select * from " ~ model.target
-        ~ " except select * from " ~ model.source ~ ") as changed) returning 1) "
-        ~ "insert into audit.publish_log (invocation_id, model, target_table, created, rows_deleted,"
-        ~ " dag_id, run_id, task_id, try_number) select "
-        ~ sql_text_literal(invocation_id) ~ ", " ~ sql_text_literal(model.name) ~ ", "
-        ~ sql_text_literal(model.target.schema ~ '.' ~ model.target.identifier) ~ ", "
-        ~ (not model.exists) ~ ", count(*), " ~ airflow_task_attempt() ~ " from deleted"
-    ) -%}
-    {%- do statements.append(
-        "with inserted as (insert into " ~ model.target ~ " select * from " ~ model.source
-        ~ " except select * from " ~ model.target ~ " returning 1) "
-        ~ "update audit.publish_log set rows_inserted = (select count(*) from inserted) where " ~ log_key
-    ) -%}
+
+    {#- Rows that changed or disappeared, counted into the publish log. -#}
+    {%- set delete_changed -%}
+        with deleted as (
+            delete from {{ model.target }}
+            where ({{ model.key }}) in (
+                select {{ model.key }}
+                from (select * from {{ model.target }} except select * from {{ model.source }}) as changed
+            )
+            returning 1
+        )
+        insert into audit.publish_log
+            (invocation_id, model, target_table, created, rows_deleted, dag_id, run_id, task_id, try_number)
+        select {{ sql_text_literal(invocation_id) }}, {{ sql_text_literal(model.name) }},
+               {{ sql_text_literal(target_table) }}, {{ not model.exists }}, count(*), {{ airflow_task_attempt() }}
+        from deleted
+    {%- endset -%}
+    {%- do statements.append(delete_changed) -%}
+
+    {#- Rows that changed or are new. A separate statement, so it sees the delete. -#}
+    {%- set insert_changed -%}
+        with inserted as (
+            insert into {{ model.target }}
+            select * from {{ model.source }} except select * from {{ model.target }}
+            returning 1
+        )
+        update audit.publish_log
+        set rows_inserted = (select count(*) from inserted)
+        where invocation_id = {{ sql_text_literal(invocation_id) }} and model = {{ sql_text_literal(model.name) }}
+    {%- endset -%}
+    {%- do statements.append(insert_changed) -%}
+
     {#- Access by classification: first remove every earlier grant to the reader role,
         table-level and column-level, then grant the internal columns. -#}
-    {%- do statements.append("revoke select on " ~ model.target ~ " from " ~ reader_role) -%}
-    {%- do statements.append(
-        "revoke select (" ~ model.columns | join(', ') ~ ") on " ~ model.target ~ " from " ~ reader_role
-    ) -%}
-    {%- if model.internal_columns -%}
-        {%- do statements.append(
-            "grant select (" ~ model.internal_columns | join(', ') ~ ") on " ~ model.target ~ " to " ~ reader_role
-        ) -%}
-    {%- endif -%}
-    {%- do statements.append("grant select on " ~ model.target ~ " to " ~ restricted_reader_role) -%}
+    {%- set grants -%}
+        revoke select on {{ model.target }} from {{ reader_role }};
+        revoke select ({{ model.columns | join(', ') }}) on {{ model.target }} from {{ reader_role }};
+        {%- if model.internal_columns %}
+        grant select ({{ model.internal_columns | join(', ') }}) on {{ model.target }} to {{ reader_role }};
+        {%- endif %}
+        grant select on {{ model.target }} to {{ restricted_reader_role }}
+    {%- endset -%}
+    {%- do statements.append(grants) -%}
 {%- endfor -%}
 {%- do statements.append('commit') -%}
 {%- call statement('publish_models') -%}

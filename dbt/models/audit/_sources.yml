@@ -1,0 +1,17 @@
+sources:
+  - name: audit
+    description: >
+      Platform tables recording loads, dbt results and data quality. Created by
+      warehouse-db/init/03-create-audit-tables.sql, which documents their columns.
+    schema: audit
+    tables:
+      - name: load_log
+        description: One row per load attempt, written by ingestion.
+      - name: dbt_run_results
+        description: One row per model or test result of each dbt invocation.
+      - name: dq_load_summary
+        description: >
+          Data-quality summary per load and staging model, written by each staging
+          model's post-hook (macros/record_dq_issues.sql).
+      - name: dq_issue_counts
+        description: Rows affected by each data-quality issue code, per load and staging model.

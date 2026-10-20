@@ -30,7 +30,7 @@ GRANT USAGE, CREATE ON SCHEMA core TO transformation;
 GRANT USAGE ON SCHEMA core TO analytics;
 
 -- audit: written by both ingestion and transformation. Analytics may only read the
--- tables granted to it explicitly (the data-quality history, see dbt_project.yml).
+-- tables granted to it explicitly (the data-quality history, see 03-create-audit-tables.sql).
 GRANT USAGE, CREATE ON SCHEMA audit TO ingestion, transformation;
 GRANT USAGE ON SCHEMA audit TO analytics;
 

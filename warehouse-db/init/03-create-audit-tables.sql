@@ -60,3 +60,36 @@ CREATE INDEX dbt_run_results_node_idx ON audit.dbt_run_results (node_id, run_sta
 -- Insert only: results are never changed or removed.
 GRANT SELECT, INSERT ON audit.dbt_run_results TO transformation;
 GRANT SELECT ON audit.dbt_run_results TO ingestion;
+
+-- Data-quality history: written by each staging model, for its own loads, right after
+-- it is built (dbt/macros/record_dq_issues.sql). Kept for every load, including loads
+-- whose rows were later replaced by a new delivery of the same file.
+
+-- One row per load and staging model: how many rows had data-quality issues.
+CREATE TABLE audit.dq_load_summary (
+  load_id            bigint       NOT NULL REFERENCES audit.load_log (load_id),
+  model              text         NOT NULL,
+  total_rows         bigint       NOT NULL,
+  -- Rows with at least one dq_errors code, i.e. excluded from core.
+  rows_with_errors   bigint       NOT NULL,
+  -- Rows with at least one dq_warnings code, i.e. repaired.
+  rows_with_warnings bigint       NOT NULL,
+  error_rate         numeric(5, 4) NOT NULL CHECK (error_rate BETWEEN 0 AND 1),
+  measured_at        timestamptz  NOT NULL DEFAULT now(),
+  PRIMARY KEY (load_id, model)
+);
+
+-- One row per load, staging model and issue code: how many rows had the issue.
+CREATE TABLE audit.dq_issue_counts (
+  load_id       bigint NOT NULL REFERENCES audit.load_log (load_id),
+  model         text   NOT NULL,
+  -- error: value unusable, row excluded from core; warning: value repaired.
+  kind          text   NOT NULL CHECK (kind IN ('error', 'warning')),
+  code          text   NOT NULL,
+  affected_rows bigint NOT NULL,
+  PRIMARY KEY (load_id, model, kind, code)
+);
+
+-- Insert only. Counts only, no raw values, so data consumers may read them.
+GRANT SELECT, INSERT ON audit.dq_load_summary, audit.dq_issue_counts TO transformation;
+GRANT SELECT ON audit.dq_load_summary, audit.dq_issue_counts TO analytics;

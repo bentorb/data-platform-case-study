@@ -13,8 +13,6 @@ Needs the warehouse: skipped without one, unless REQUIRE_WAREHOUSE is set (e.g. 
 
 import json
 import os
-import shutil
-import subprocess
 
 import psycopg
 import pytest
@@ -22,7 +20,6 @@ from airflow.providers.postgres.hooks.postgres import PostgresHook
 
 from lib.ingestion.object_storage_to_postgres import create_raw_table
 from lib.pipelines.config import PIPELINES_PATH, load_config
-from lib.transformation.dbt import DBT_EXECUTABLE_PATH, DBT_PROJECT_PATH
 
 
 def warehouse(conn_id):
@@ -34,22 +31,6 @@ def warehouse(conn_id):
             raise
         pytest.skip(f"the warehouse is not reachable ({type(error).__name__}): start the stack first")
     return hook
-
-
-@pytest.fixture(scope="module")
-def dbt_project(tmp_path_factory):
-    """A writable copy of the dbt project (it is mounted read-only), and a dbt runner."""
-    project = tmp_path_factory.mktemp("dbt") / "project"
-    shutil.copytree(DBT_PROJECT_PATH, project, ignore=shutil.ignore_patterns("target", "logs"))
-
-    def dbt(*args):
-        return subprocess.run(
-            [DBT_EXECUTABLE_PATH, *args, "--project-dir", str(project), "--profiles-dir", str(project)],
-            capture_output=True,
-            text=True,
-        )
-
-    return dbt
 
 
 def create_missing_raw_tables():

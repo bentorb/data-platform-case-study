@@ -1,0 +1,2 @@
+# Jinja templates rather than SQL: generic tests are mostly loops, which sqlfluff can lint but not fix.
+tests/generic/

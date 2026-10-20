@@ -15,7 +15,8 @@ x-airflow-common: &airflow-common
   environment: &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${AIRFLOW_DB_PASSWORD:-airflow}@airflow-db/airflow
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: >-
+      postgresql+psycopg2://airflow:${AIRFLOW_DB_PASSWORD:-airflow}@airflow-db/airflow
     AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-nuyaCdXtmhX5e8oBl4FRin5xtSbZ0vJtI52gz3cNi0Q=}
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
@@ -213,6 +214,20 @@ services:
       - ./pyproject.toml:/opt/data-platform/pyproject.toml:ro
     restart: "no"
 
+  # Static checks of the whole repository (tests/lint.sh), with the linters of the test
+  # image. Not started by `docker compose up`; run it with `docker compose run --rm lint`.
+  lint:
+    build:
+      <<: *airflow-build
+      target: test
+    image: data-platform-airflow-test:local
+    profiles: ["test"]
+    entrypoint: ["bash", "tests/lint.sh"]
+    working_dir: /work
+    volumes:
+      - .:/work:ro
+    restart: "no"
+
   # Cleans Airflow's metadata database: runs, task instances, XComs and the like
   # older than 90 days. Not started by `docker compose up`; run it with
   # `docker compose run --rm airflow-db-clean` (in production, a scheduled job). Not a
@@ -223,7 +238,9 @@ services:
     command:
       - bash
       - -c
-      - airflow db clean --yes --skip-archive --clean-before-timestamp "$$(date -u -d '90 days ago' +%Y-%m-%dT%H:%M:%S+00:00)"
+      - >-
+        airflow db clean --yes --skip-archive
+        --clean-before-timestamp "$$(date -u -d '90 days ago' +%Y-%m-%dT%H:%M:%S+00:00)"
     restart: "no"
 
   airflow-api-server:

@@ -44,7 +44,14 @@ ENV PYTHONPATH=/opt/data-platform
 COPY --from=lib . /opt/data-platform/lib
 COPY --from=pipelines . /opt/data-platform/pipelines
 
-# Same Airflow, Cosmos and dbt versions as the platform, plus the test runner.
+# Same Airflow, Cosmos and dbt versions as the platform, plus the test runner and the
+# linters (docker-compose.yml: the tests and lint services).
 FROM platform AS test
 ARG AIRFLOW_CONSTRAINTS
-RUN pip install --no-cache-dir "pytest==8.4.2" --constraint "${AIRFLOW_CONSTRAINTS}"
+RUN pip install --no-cache-dir \
+      "pytest==8.4.2" \
+      "ruff==0.12.0" \
+      "sqlfluff==3.4.0" \
+      "yamllint==1.37.1" \
+      "shellcheck-py==0.10.0.1" \
+      --constraint "${AIRFLOW_CONSTRAINTS}"

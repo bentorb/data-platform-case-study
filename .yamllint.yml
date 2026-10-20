@@ -1,0 +1,19 @@
+# yamllint settings (docker compose run --rm lint): its defaults, adapted to this repo.
+extends: default
+
+rules:
+  # The YAML files here are single documents, without a leading ---.
+  document-start: disable
+  line-length:
+    max: 120
+    # Unit test fixtures keep one row per line, so they read as tables.
+    ignore: |
+      dbt/models/**/_*unit_tests.yml
+  # Only values are checked: keys such as GitHub Actions' `on:` are not booleans.
+  truthy:
+    check-keys: false
+
+ignore: |
+  dbt/target/
+  dbt/logs/
+  dbt/dbt_packages/

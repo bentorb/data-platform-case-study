@@ -4,3 +4,17 @@
 testpaths = ["tests"]
 # Test files are not packages: each test module is imported on its own.
 addopts = ["--import-mode=importlib", "-p", "no:cacheprovider"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py313"
+
+[tool.ruff.lint]
+# Defaults (pyflakes, pycodestyle errors), plus warnings, import order, likely bugs and
+# outdated syntax.
+extend-select = ["W", "I", "B", "UP"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["lib"]
+# Not the airflow/ folder at the repo root: the Airflow package.
+known-third-party = ["airflow"]

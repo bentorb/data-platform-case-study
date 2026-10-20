@@ -1,0 +1,31 @@
+# sqlfluff settings (docker compose run --rm lint), adapted to the style of the models.
+[sqlfluff]
+dialect = postgres
+templater = jinja
+max_line_length = 110
+# Style rules the models deliberately do otherwise: column names that are non-reserved
+# keywords (e.g. transactions), joins with USING, short selects on one line, window
+# clauses on one line, and the order of plain and calculated columns.
+exclude_rules = references.keywords, structure.using, layout.select_targets, layout.keyword_newline, structure.column_order
+
+[sqlfluff:indentation]
+# The first condition of a WHERE can stay on its line, the next ones indented below it.
+allow_implicit_indents = True
+
+[sqlfluff:templater:jinja]
+# dbt's functions (ref, source, config, is_incremental, ...) and the project's macros.
+apply_dbt_builtins = True
+load_macros_from_path = macros
+library_path = .sqlfluff_library
+
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = lower
+
+[sqlfluff:rules:capitalisation.functions]
+extended_capitalisation_policy = lower
+
+[sqlfluff:rules:capitalisation.literals]
+capitalisation_policy = lower
+
+[sqlfluff:rules:capitalisation.types]
+extended_capitalisation_policy = lower

@@ -16,6 +16,7 @@ REVOKE ALL ON SCHEMA public FROM PUBLIC;
 CREATE SCHEMA raw;
 CREATE SCHEMA staging;
 CREATE SCHEMA core;
+CREATE SCHEMA live;
 CREATE SCHEMA audit;
 
 -- raw: written by ingestion, read by transformation
@@ -25,9 +26,13 @@ GRANT USAGE ON SCHEMA raw TO transformation;
 -- staging: transformation only
 GRANT USAGE, CREATE ON SCHEMA staging TO transformation;
 
--- core: built by transformation, read by analytics
+-- core: built and tested by transformation; internal, like staging
 GRANT USAGE, CREATE ON SCHEMA core TO transformation;
-GRANT USAGE ON SCHEMA core TO analytics;
+
+-- live: the published copy of core, written by transformation once core has passed
+-- its tests. The only business data analytics reads.
+GRANT USAGE, CREATE ON SCHEMA live TO transformation;
+GRANT USAGE ON SCHEMA live TO analytics;
 
 -- audit: written by both ingestion and transformation. Analytics may only read the
 -- tables granted to it explicitly (the data-quality history, see 03-create-audit-tables.sql).
@@ -39,7 +44,7 @@ GRANT USAGE ON SCHEMA audit TO analytics;
 ALTER DEFAULT PRIVILEGES FOR ROLE ingestion_service IN SCHEMA raw
   GRANT SELECT ON TABLES TO transformation;
 
-ALTER DEFAULT PRIVILEGES FOR ROLE transformation_service IN SCHEMA core
+ALTER DEFAULT PRIVILEGES FOR ROLE transformation_service IN SCHEMA live
   GRANT SELECT ON TABLES TO analytics;
 
 ALTER DEFAULT PRIVILEGES FOR ROLE ingestion_service IN SCHEMA audit

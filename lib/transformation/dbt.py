@@ -1,4 +1,5 @@
-"""Builds Airflow task groups that run the platform's dbt project with Cosmos.
+"""Builds the Airflow tasks that run the platform's dbt project with Cosmos: a task
+group that builds and tests models in core, and a task that publishes them to live.
 
 All Cosmos configuration lives here, so DAGs only choose which models to run.
 dbt currently runs in local mode (installed in the Airflow image); other execution
@@ -12,11 +13,18 @@ from pathlib import Path
 
 from cosmos import DbtTaskGroup, ExecutionConfig, ProfileConfig, ProjectConfig, RenderConfig
 from cosmos.constants import DbtResourceType, ExecutionMode, InvocationMode, LoadMode, TestBehavior
+from cosmos.operators.local import DbtRunOperationLocalOperator
 
 # Set by docker-compose.yml; defaults to the dbt/ folder at the repo root.
 DBT_PROJECT_PATH = Path(os.environ.get("DBT_PROJECT_PATH", Path(__file__).resolve().parents[2] / "dbt"))
 # dbt is installed in its own virtualenv in the Airflow image.
 DBT_EXECUTABLE_PATH = "/opt/dbt-venv/bin/dbt"
+
+PROFILE_CONFIG = ProfileConfig(
+    profile_name="data_platform",
+    target_name="local",
+    profiles_yml_filepath=DBT_PROJECT_PATH / "profiles.yml",
+)
 
 
 def build_dbt_task_group(group_id: str = "dbt", select: list[str] | None = None) -> DbtTaskGroup:
@@ -40,11 +48,7 @@ def build_dbt_task_group(group_id: str = "dbt", select: list[str] | None = None)
                 "DBT_INDIRECT_SELECTION": "buildable",
             },
         ),
-        profile_config=ProfileConfig(
-            profile_name="data_platform",
-            target_name="local",
-            profiles_yml_filepath=DBT_PROJECT_PATH / "profiles.yml",
-        ),
+        profile_config=PROFILE_CONFIG,
         execution_config=ExecutionConfig(
             execution_mode=ExecutionMode.LOCAL,
             # Run the dbt executable rather than importing dbt: it is not installed
@@ -65,7 +69,28 @@ def build_dbt_task_group(group_id: str = "dbt", select: list[str] | None = None)
             should_detach_multiple_parents_tests=True,
         ),
     )
-    nodes = task_group.dbt_graph.filtered_nodes.values()
-    if not any(node.resource_type == DbtResourceType.MODEL for node in nodes):
+    if not selected_models(task_group):
         raise ValueError(f"The dbt selection {select} matches no models")
     return task_group
+
+
+def selected_models(task_group: DbtTaskGroup) -> list[str]:
+    """The names of the dbt models a task group builds."""
+    nodes = task_group.dbt_graph.filtered_nodes.values()
+    return sorted(node.resource_name for node in nodes if node.resource_type == DbtResourceType.MODEL)
+
+
+def build_dbt_publish_task(models: list[str], task_id: str = "publish") -> DbtRunOperationLocalOperator:
+    """Returns a task that publishes `models` from core to live in one transaction (see
+    dbt/macros/publish_models.sql). Models outside core are ignored. Placed after the
+    task group that builds and tests them, it only runs once they have all passed."""
+    return DbtRunOperationLocalOperator(
+        task_id=task_id,
+        macro_name="publish_models",
+        args={"models": models},
+        project_dir=DBT_PROJECT_PATH,
+        profile_config=PROFILE_CONFIG,
+        install_deps=False,
+        invocation_mode=InvocationMode.SUBPROCESS,
+        dbt_executable_path=DBT_EXECUTABLE_PATH,
+    )

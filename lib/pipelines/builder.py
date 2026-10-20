@@ -1,5 +1,6 @@
 """Builds a pipeline's Airflow DAG from its config (pipelines/<name>.yml): a task that
-loads the source file into the target table, followed by the pipeline's dbt models.
+loads the source file into the target table, the pipeline's dbt models, built and
+tested in core, and a task that publishes them to live.
 
 Each pipeline has its own DAG file calling build_pipeline, so a broken config only
 breaks that pipeline's DAG.
@@ -13,7 +14,7 @@ from airflow.sdk import DAG, dag, task
 from lib.ingestion.object_storage_to_postgres import load_csv
 from lib.orchestration.defaults import DEFAULT_ARGS
 from lib.pipelines.config import config_path, load_config
-from lib.transformation.dbt import build_dbt_task_group
+from lib.transformation.dbt import build_dbt_publish_task, build_dbt_task_group, selected_models
 
 
 def build_pipeline(name: str) -> DAG:
@@ -40,7 +41,7 @@ def build_pipeline(name: str) -> DAG:
     )
     def pipeline():
         @task(task_id=f"load_{ingestion.target.table.replace('.', '_')}")
-        def load() -> int:
+        def load_raw_table() -> int:
             return load_csv(
                 source_uri=ingestion.source.uri,
                 source_conn_id=ingestion.source.conn_id,
@@ -49,6 +50,12 @@ def build_pipeline(name: str) -> DAG:
                 columns=ingestion.columns,
             )
 
-        load() >> build_dbt_task_group(select=select)
+        # Build and test in core, then publish to live once every test has passed.
+        load = load_raw_table()
+        transform = build_dbt_task_group(select=select)
+        models = selected_models(transform)
+        publish = build_dbt_publish_task(models)
+
+        load >> transform >> publish
 
     return pipeline()

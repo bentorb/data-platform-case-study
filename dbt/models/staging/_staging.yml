@@ -10,6 +10,18 @@ models:
             threshold: 0.1
           config:
             severity: warn
+      # Source freshness: staging keeps every row, rejected ones included, so this
+      # tells whether the source still sends recent data. With the fact's own recency
+      # test, a stale fact over a fresh staging means recent rows are being rejected.
+      - dbt_utils.recency:
+          name: stg_customer_transactions_is_recent
+          arguments:
+            field: transaction_date
+            datepart: day
+            interval: 2
+            ignore_time_component: true
+          config:
+            severity: warn
     columns:
       - name: transaction_id
         description: Identifier of the transaction. A 'T' prefix is removed.

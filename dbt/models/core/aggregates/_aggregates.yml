@@ -5,6 +5,17 @@ models:
     description: >
       Sales per day, from fct_transactions, with the share of the day's transactions
       that passed data-quality checks.
+    data_tests:
+      # Every aggregate must add up to the fact; the others reuse these totals.
+      - totals_match:
+          name: agg_daily_sales_matches_fct_transactions
+          arguments:
+            compare_to: ref('fct_transactions')
+            totals: &fct_transactions_totals
+              transactions: count(*)
+              units: sum(quantity)
+              net_amount: sum(net_amount)
+              gross_amount: sum(gross_amount)
     columns:
       - name: transaction_date
         description: Day of the transactions.
@@ -59,6 +70,12 @@ models:
 
   - name: agg_product_sales
     description: Sales per product, from fct_transactions.
+    data_tests:
+      - totals_match:
+          name: agg_product_sales_matches_fct_transactions
+          arguments:
+            compare_to: ref('fct_transactions')
+            totals: *fct_transactions_totals
     columns:
       - name: product_id
         description: Identifier of the product.
@@ -113,6 +130,12 @@ models:
 
   - name: agg_customer_sales
     description: Sales per customer, from fct_transactions.
+    data_tests:
+      - totals_match:
+          name: agg_customer_sales_matches_fct_transactions
+          arguments:
+            compare_to: ref('fct_transactions')
+            totals: *fct_transactions_totals
     columns:
       - name: customer_id
         description: Identifier of the customer.

@@ -140,6 +140,10 @@ models:
       - name: customer_id
         description: Identifier of the customer.
         data_type: integer
+        config:
+          meta:
+            # Personal data: it identifies a person, if indirectly.
+            classification: restricted
         constraints:
           - type: primary_key
       - name: transactions

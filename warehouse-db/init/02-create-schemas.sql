@@ -4,7 +4,7 @@
 -- Database access: only our roles can connect.
 -- :"DBNAME" is a psql variable holding the current database name.
 REVOKE ALL ON DATABASE :"DBNAME" FROM PUBLIC;
-GRANT CONNECT ON DATABASE :"DBNAME" TO ingestion, transformation, analytics;
+GRANT CONNECT ON DATABASE :"DBNAME" TO ingestion, transformation, analytics;  -- analytics_restricted inherits it
 -- Ingestion stages each file in a temporary table before inserting it into raw;
 -- dbt does the same for incremental models.
 GRANT TEMPORARY ON DATABASE :"DBNAME" TO ingestion, transformation;
@@ -44,8 +44,11 @@ GRANT USAGE ON SCHEMA audit TO analytics;
 ALTER DEFAULT PRIVILEGES FOR ROLE ingestion_service IN SCHEMA raw
   GRANT SELECT ON TABLES TO transformation;
 
+-- Live tables are readable by analytics_restricted only; each publish then grants
+-- analytics the columns that are not restricted (dbt/macros/publish_models.sql). Fails
+-- closed: a table whose grants were not applied is hidden from analytics.
 ALTER DEFAULT PRIVILEGES FOR ROLE transformation_service IN SCHEMA live
-  GRANT SELECT ON TABLES TO analytics;
+  GRANT SELECT ON TABLES TO analytics_restricted;
 
 ALTER DEFAULT PRIVILEGES FOR ROLE ingestion_service IN SCHEMA audit
   GRANT SELECT ON TABLES TO transformation;

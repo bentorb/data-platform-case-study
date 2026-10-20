@@ -11,9 +11,15 @@
 
     Models outside `source_schema` are ignored, so a pipeline can pass all its models.
     Each published model is recorded in audit.publish_log, in the same transaction.
+
+    Access follows each column's classification (config.meta.classification in the
+    model's YAML): `reader_role` may read the columns classified `internal`, the
+    default, and `restricted_reader_role` every column. The grants are applied with
+    every publish, so a reclassified column takes effect on the next one.
 #}
 
-{% macro publish_models(models, source_schema='core', target_schema='live') %}
+{% macro publish_models(models, source_schema='core', target_schema='live',
+                        reader_role='analytics', restricted_reader_role='analytics_restricted') %}
 
 {#- Check every model before changing anything, so a problem fails the whole publish early. -#}
 {%- set plan = [] -%}
@@ -33,6 +39,8 @@
         'target': api.Relation.create(database=node.database, schema=target_schema, identifier=node.alias, type='table'),
         'exists': existing is not none,
         'key': publish_primary_key(node) | join(', '),
+        'columns': node.columns.keys() | list,
+        'internal_columns': publish_internal_columns(node),
     }) -%}
 {%- endfor -%}
 
@@ -64,6 +72,18 @@
         ~ " except select * from " ~ model.target ~ " returning 1) "
         ~ "update audit.publish_log set rows_inserted = (select count(*) from inserted) where " ~ log_key
     ) -%}
+    {#- Access by classification: first remove every earlier grant to the reader role,
+        table-level and column-level, then grant the internal columns. -#}
+    {%- do statements.append("revoke select on " ~ model.target ~ " from " ~ reader_role) -%}
+    {%- do statements.append(
+        "revoke select (" ~ model.columns | join(', ') ~ ") on " ~ model.target ~ " from " ~ reader_role
+    ) -%}
+    {%- if model.internal_columns -%}
+        {%- do statements.append(
+            "grant select (" ~ model.internal_columns | join(', ') ~ ") on " ~ model.target ~ " to " ~ reader_role
+        ) -%}
+    {%- endif -%}
+    {%- do statements.append("grant select on " ~ model.target ~ " to " ~ restricted_reader_role) -%}
 {%- endfor -%}
 {%- do statements.append('commit') -%}
 {%- call statement('publish_models') -%}
@@ -73,6 +93,29 @@
 {%- do log("Published " ~ (plan | length) ~ " models to " ~ target_schema ~ ": "
            ~ (plan | map(attribute='name') | join(', ')), info=true) -%}
 
+{% endmacro %}
+
+
+{#
+    The columns of a model classified `internal`: those without a classification, or
+    with `classification: internal`. Any other value than internal or restricted fails.
+#}
+{% macro publish_internal_columns(node) %}
+    {%- set internal = [] -%}
+    {%- for column in node.columns.values() -%}
+        {%- set meta = column.config.meta if column.config and column.config.meta else column.meta or {} -%}
+        {%- set classification = meta.get('classification', 'internal') -%}
+        {%- if classification not in ['internal', 'restricted'] -%}
+            {{ exceptions.raise_compiler_error(
+                "Cannot publish " ~ node.name ~ ": column " ~ column.name ~ " has classification '"
+                ~ classification ~ "', expected internal or restricted"
+            ) }}
+        {%- endif -%}
+        {%- if classification == 'internal' -%}
+            {%- do internal.append(column.name) -%}
+        {%- endif -%}
+    {%- endfor -%}
+    {{ return(internal) }}
 {% endmacro %}
 
 

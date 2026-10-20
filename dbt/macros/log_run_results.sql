@@ -6,12 +6,7 @@
 #}
 {% macro log_run_results(results) %}
     {%- if execute and results -%}
-        {%- set airflow = [
-            env_var('AIRFLOW_CTX_DAG_ID', ''),
-            env_var('AIRFLOW_CTX_DAG_RUN_ID', ''),
-            env_var('AIRFLOW_CTX_TASK_ID', ''),
-            env_var('AIRFLOW_CTX_TRY_NUMBER', ''),
-        ] -%}
+        {%- set airflow = airflow_task_attempt() -%}
         {%- set rows = [] -%}
         {%- for result in results -%}
             {#- rows_affected only for models: for tests, the adapter response is
@@ -28,10 +23,7 @@
                     if result.node.resource_type == 'model' and result.adapter_response else 'null',
                 result.execution_time | round(3),
                 sql_text_literal(result.message),
-                sql_text_literal(airflow[0]),
-                sql_text_literal(airflow[1]),
-                sql_text_literal(airflow[2]),
-                airflow[3] if airflow[3] else 'null',
+                airflow,
             ] -%}
             {%- do rows.append('(' ~ values | join(', ') ~ ')') -%}
         {%- endfor -%}
@@ -52,4 +44,19 @@
     {%- else -%}
         '{{ value | string | replace("'", "''") }}'
     {%- endif -%}
+{%- endmacro %}
+
+
+{#
+    The Airflow task attempt running dbt, as SQL values for dag_id, run_id, task_id
+    and try_number: null when dbt runs outside Airflow.
+#}
+{% macro airflow_task_attempt() -%}
+    {%- set try_number = env_var('AIRFLOW_CTX_TRY_NUMBER', '') -%}
+    {{ return([
+        sql_text_literal(env_var('AIRFLOW_CTX_DAG_ID', '')),
+        sql_text_literal(env_var('AIRFLOW_CTX_DAG_RUN_ID', '')),
+        sql_text_literal(env_var('AIRFLOW_CTX_TASK_ID', '')),
+        try_number if try_number else 'null',
+    ] | join(', ')) }}
 {%- endmacro %}

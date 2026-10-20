@@ -93,3 +93,30 @@ CREATE TABLE audit.dq_issue_counts (
 -- Insert only. Counts only, no raw values, so data consumers may read them.
 GRANT SELECT, INSERT ON audit.dq_load_summary, audit.dq_issue_counts TO transformation;
 GRANT SELECT ON audit.dq_load_summary, audit.dq_issue_counts TO analytics;
+
+-- One row per model and publish to live, written by dbt/macros/publish_models.sql in
+-- the publish's own transaction: a row exists if and only if the publish committed.
+-- Answers which version of a live table consumers see, and since when.
+CREATE TABLE audit.publish_log (
+  invocation_id  text        NOT NULL,
+  model          text        NOT NULL,
+  target_table   text        NOT NULL,
+  -- Whether this publish created the live table.
+  created        boolean     NOT NULL,
+  rows_deleted   bigint      NOT NULL,
+  rows_inserted  bigint,
+  published_at   timestamptz NOT NULL DEFAULT now(),
+  -- The Airflow task attempt that published; null when run outside Airflow.
+  dag_id         text,
+  run_id         text,
+  task_id        text,
+  try_number     integer,
+  PRIMARY KEY (invocation_id, model)
+);
+
+-- Finds the publishes of a model, e.g. the latest one.
+CREATE INDEX publish_log_model_idx ON audit.publish_log (model, published_at);
+
+-- UPDATE fills in rows_inserted, within the same transaction. Consumers may read it.
+GRANT SELECT, INSERT, UPDATE ON audit.publish_log TO transformation;
+GRANT SELECT ON audit.publish_log TO analytics;

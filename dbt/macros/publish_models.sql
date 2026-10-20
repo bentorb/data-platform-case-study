@@ -10,6 +10,7 @@
     rows that changed or disappeared are deleted, then changed and new rows inserted.
 
     Models outside `source_schema` are ignored, so a pipeline can pass all its models.
+    Each published model is recorded in audit.publish_log, in the same transaction.
 #}
 
 {% macro publish_models(models, source_schema='core', target_schema='live') %}
@@ -42,17 +43,26 @@
 -#}
 {%- set statements = ['begin'] -%}
 {%- for model in plan -%}
+    {%- set log_key = "invocation_id = " ~ sql_text_literal(invocation_id) ~ " and model = " ~ sql_text_literal(model.name) -%}
     {%- if not model.exists -%}
         {%- do statements.append("create table " ~ model.target ~ " (like " ~ model.source ~ " including all)") -%}
     {%- endif -%}
-    {#- Rows that changed or disappeared, then rows that changed or are new. -#}
+    {#- Rows that changed or disappeared, then rows that changed or are new, each
+        counted into the publish log. Two statements, so the insert sees the delete. -#}
     {%- do statements.append(
-        "delete from " ~ model.target ~ " where (" ~ model.key ~ ") in ("
+        "with deleted as (delete from " ~ model.target ~ " where (" ~ model.key ~ ") in ("
         ~ "select " ~ model.key ~ " from (select * from " ~ model.target
-        ~ " except select * from " ~ model.source ~ ") as changed)"
+        ~ " except select * from " ~ model.source ~ ") as changed) returning 1) "
+        ~ "insert into audit.publish_log (invocation_id, model, target_table, created, rows_deleted,"
+        ~ " dag_id, run_id, task_id, try_number) select "
+        ~ sql_text_literal(invocation_id) ~ ", " ~ sql_text_literal(model.name) ~ ", "
+        ~ sql_text_literal(model.target.schema ~ '.' ~ model.target.identifier) ~ ", "
+        ~ (not model.exists) ~ ", count(*), " ~ airflow_task_attempt() ~ " from deleted"
     ) -%}
     {%- do statements.append(
-        "insert into " ~ model.target ~ " select * from " ~ model.source ~ " except select * from " ~ model.target
+        "with inserted as (insert into " ~ model.target ~ " select * from " ~ model.source
+        ~ " except select * from " ~ model.target ~ " returning 1) "
+        ~ "update audit.publish_log set rows_inserted = (select count(*) from inserted) where " ~ log_key
     ) -%}
 {%- endfor -%}
 {%- do statements.append('commit') -%}

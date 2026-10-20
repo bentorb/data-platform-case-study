@@ -9,10 +9,10 @@ sources:
         description: Customer transactions loaded from the landing zone.
         columns:
           - name: _source_file
-            description: URI of the file the row was loaded from.
+            description: "{{ doc('_source_file') }}"
           - name: _source_row
-            description: Position of the row in the source file, starting at 1.
+            description: "{{ doc('_source_row') }}"
           - name: _loaded_at
-            description: When the row was loaded; shared by all rows of one load.
+            description: "{{ doc('_loaded_at') }}"
           - name: _load_id
-            description: The load's entry in audit.load_log (run, attempt, row counts).
+            description: "{{ doc('_load_id') }}"

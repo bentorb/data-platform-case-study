@@ -43,18 +43,18 @@ models:
         data_tests:
           - not_null
       - name: _source_file
-        description: URI of the file the row was loaded from.
+        description: "{{ doc('_source_file') }}"
         data_tests:
           - not_null
       - name: _source_row
-        description: Position of the row in the source file.
+        description: "{{ doc('_source_row') }}"
         data_tests:
           - not_null
       - name: _loaded_at
-        description: When the row was loaded.
+        description: "{{ doc('_loaded_at') }}"
         data_tests:
           - not_null
       - name: _load_id
-        description: The load's entry in audit.load_log.
+        description: "{{ doc('_load_id') }}"
         data_tests:
           - not_null

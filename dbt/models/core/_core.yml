@@ -152,17 +152,17 @@ models:
               arguments:
                 min_value: 0
       - name: _load_id
-        description: The load's entry in audit.load_log.
+        description: "{{ doc('_load_id') }}"
         data_type: bigint
         constraints:
           - type: not_null
       - name: _source_file
-        description: URI of the file the transaction was loaded from.
+        description: "{{ doc('_source_file') }}"
         data_type: text
         constraints:
           - type: not_null
       - name: _source_row
-        description: Position of the transaction in the source file.
+        description: "{{ doc('_source_row') }}"
         data_type: bigint
         constraints:
           - type: not_null

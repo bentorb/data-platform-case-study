@@ -10,6 +10,15 @@ models:
             threshold: 0.1
           config:
             severity: warn
+      # Volume: the newest load's rows within 50% of the median of the 14 loads before
+      # it, once there are 7. Warns: an unusual volume is worth a look, not a stop.
+      - volume_within_range:
+          arguments:
+            lookback: 14
+            min_history: 7
+            tolerance: 0.5
+          config:
+            severity: warn
       # Source freshness: staging keeps every row, rejected ones included, so this
       # tells whether the source still sends recent data. With the fact's own recency
       # test, a stale fact over a fresh staging means recent rows are being rejected.

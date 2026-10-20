@@ -14,6 +14,8 @@ ingestion:
   target:
     conn_id: warehouse_ingestion
     table: raw.customer_transactions
+    # One raw partition per day of loads: day (the default), month or none.
+    partition_by: day
   columns:
     - transaction_id
     - customer_id

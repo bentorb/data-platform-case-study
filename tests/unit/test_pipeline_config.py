@@ -51,6 +51,7 @@ def test_valid_config(write_config):
     config = load_config("orders")
     assert config.ingestion.target.table == "raw.orders"
     assert config.ingestion.retention_days is None
+    assert config.ingestion.target.partition_by == "day"
     # No transformation section: the builder selects the models built from the table.
     assert config.transformation.select is None
 
@@ -66,6 +67,7 @@ def test_valid_config(write_config):
         ({"ingestion__columns": ["order_id", "order_id"]}, "duplicate columns: order_id"),
         ({"ingestion__columns": ["Order Id"]}, "should match pattern"),
         ({"ingestion__retention_days": 0}, "greater than 0"),
+        ({"ingestion__target__partition_by": "week"}, "Input should be 'day', 'month' or 'none'"),
         ({"transformation": {"select": []}}, "at least 1 item"),
     ],
 )

@@ -68,6 +68,7 @@ def build_pipeline(name: str) -> DAG:
                 postgres_conn_id=ingestion.target.conn_id,
                 table=ingestion.target.table,
                 columns=ingestion.columns,
+                partition_by=ingestion.target.partition_by,
             )
 
         # Build and test in core, then publish to live once every test has passed.

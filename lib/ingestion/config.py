@@ -6,6 +6,7 @@ import re
 
 from pydantic import Field, field_validator
 
+from lib.ingestion.partitioning import PartitionBy
 from lib.validation import IDENTIFIER, Identifier, StrictModel
 
 
@@ -17,6 +18,9 @@ class Source(StrictModel):
 class Target(StrictModel):
     conn_id: str
     table: str
+    # Partitions of the raw table by load time (see partitioning.py): one per day, the
+    # default, or per month for smaller sources, or none. Fixed once the table exists.
+    partition_by: PartitionBy = "day"
 
     @field_validator("table")
     @classmethod

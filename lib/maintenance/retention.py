@@ -19,6 +19,7 @@ from pathlib import Path
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from psycopg import sql
 
+from lib.ingestion import partitioning
 from lib.orchestration.context import airflow_task_attempt
 
 log = logging.getLogger(__name__)
@@ -157,31 +158,48 @@ def delete_old_files(folder: str, days: int) -> int:
 
 
 def expire_raw_files(*, postgres_conn_id: str, table: str, days: int) -> int:
-    """Deletes from a raw table the rows of every file whose latest successful load is
-    older than `days` days, recording the expiry in audit.retention_log. Whole files
-    are expired, the unit loads replace. Returns the number of rows deleted."""
+    """Expires from a raw table the rows of every file whose latest successful load is
+    older than `days` days, recording the expiry in audit.retention_log. Returns the
+    number of rows expired.
+
+    A partitioned table drops its partitions whose whole period is older: a partition
+    only holds files whose latest load was in its period, since loading a file again
+    moves its rows to the current one. Whole periods are kept, so raw may be kept up to
+    a period longer. A table that is not partitioned deletes those files' rows.
+    """
     schema, name = table.split(".")
     hook = PostgresHook(postgres_conn_id=postgres_conn_id)
     with hook.get_conn() as conn, conn.cursor() as cur:
-        cur.execute(
-            sql.SQL("""
-                with expired_files as (
-                    select source_file
-                    from audit.load_log
-                    where target_table = %(table)s and status = 'success'
-                    group by source_file
-                    having max(started_at) < now() - make_interval(days => %(days)s)
-                ),
-                deleted as (
-                    delete from {table}
-                    where _source_file in (select source_file from expired_files)
-                    returning 1
-                )
-                select now() - make_interval(days => %(days)s), count(*) from deleted
-            """).format(table=sql.Identifier(schema, name)),
-            {"table": table, "days": days},
-        )
-        cutoff, rows = cur.fetchone()
+        cur.execute("select now() - make_interval(days => %s)", (days,))
+        cutoff = cur.fetchone()[0]
+        granularity, _ = partitioning.partitioning_of(cur, schema, name)
+        if granularity in ("day", "month", "mixed", "empty"):
+            rows = 0
+            for partition in partitioning.expired_partitions(cur, table, cutoff):
+                partition_id = sql.Identifier(schema, partition)
+                cur.execute(sql.SQL("select count(*) from {}").format(partition_id))
+                rows += cur.fetchone()[0]
+                cur.execute(sql.SQL("drop table {}").format(partition_id))
+        else:
+            cur.execute(
+                sql.SQL("""
+                    with expired_files as (
+                        select source_file
+                        from audit.load_log
+                        where target_table = %(table)s and status = 'success'
+                        group by source_file
+                        having max(started_at) < %(cutoff)s
+                    ),
+                    deleted as (
+                        delete from {table}
+                        where _source_file in (select source_file from expired_files)
+                        returning 1
+                    )
+                    select count(*) from deleted
+                """).format(table=sql.Identifier(schema, name)),
+                {"table": table, "cutoff": cutoff},
+            )
+            rows = cur.fetchone()[0]
         cur.execute(
             "insert into audit.retention_log"
             " (target_table, cutoff, rows_deleted, dag_id, run_id, task_id, try_number)"

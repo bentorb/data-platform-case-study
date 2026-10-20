@@ -38,7 +38,7 @@ def create_missing_raw_tables():
     for path in sorted(PIPELINES_PATH.glob("*.yml")):
         ingestion = load_config(path.stem).ingestion
         with warehouse(ingestion.target.conn_id).get_conn() as conn, conn.cursor() as cur:
-            create_raw_table(cur, ingestion.target.table, ingestion.columns)
+            create_raw_table(cur, ingestion.target.table, ingestion.columns, ingestion.target.partition_by)
 
 
 def missing_models(dbt):

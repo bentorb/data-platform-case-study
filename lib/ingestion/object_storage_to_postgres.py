@@ -18,7 +18,8 @@ from airflow.sdk import ObjectStoragePath
 from airflow.sdk.exceptions import AirflowFailException
 from psycopg import Cursor, DataError, sql
 
-from lib.ingestion import load_log, schema_drift
+from lib.ingestion import load_log, partitioning, schema_drift
+from lib.ingestion.partitioning import PartitionBy
 
 log = logging.getLogger(__name__)
 
@@ -40,6 +41,7 @@ def load_csv(
     postgres_conn_id: str,
     table: str,
     columns: list[str],
+    partition_by: PartitionBy = "day",
 ) -> int:
     """Loads the rows of a CSV file into a table, creating the table if it does not exist.
 
@@ -54,6 +56,8 @@ def load_csv(
     the file, the load time and the load's entry in audit.load_log, where every
     attempt is logged. The file is streamed into COPY in chunks, so memory use
     does not grow with file size. Returns the number of rows loaded.
+
+    The table is partitioned by load time (partitioning.py), per `partition_by`.
 
     Columns are matched by name, so their order in the file does not matter. Extra
     columns in the file are left out and recorded in the load's schema_drift; a missing
@@ -77,6 +81,7 @@ def load_csv(
         if not source.exists():
             # Retried, like other errors: the file may only be late.
             raise FileNotFoundError(f"{source_uri} has not been delivered")
+        prepare_raw_table(hook, table, columns, partition_by)
         # The connection block commits on success, rolls back on error, then closes the
         # connection: everything below runs in one transaction.
         with hook.get_conn() as conn:
@@ -96,8 +101,6 @@ def load_csv(
                 header = schema_drift.read_header(stream)
                 extra_columns = schema_drift.check_header(header, columns, list(METADATA_COLUMNS))
                 schema_drift.check_table(cur, schema, name, columns + list(METADATA_COLUMNS))
-
-                create_raw_table(cur, table, columns)
 
                 # COPY into a temporary table with the file's own columns, then insert
                 # the expected ones by name, adding the metadata. The identity column
@@ -182,17 +185,36 @@ def load_csv(
     return rows
 
 
-def create_raw_table(cur: Cursor, table: str, columns: list[str]) -> None:
+def prepare_raw_table(hook: PostgresHook, table: str, columns: list[str], partition_by: PartitionBy) -> None:
+    """Creates the raw table if it does not exist, and the partitions of the current and
+    next periods, after checking that an existing table is partitioned as configured.
+    In a short transaction of its own, before the load's, under a lock on the table:
+    loads of different files into the table may start at once, and would otherwise
+    both create the same new partition."""
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute("select pg_advisory_xact_lock(hashtextextended(%s, 0))", (f"{table}|partitions",))
+        partitioning.check_partitioning(cur, table, partition_by)
+        create_raw_table(cur, table, columns, partition_by)
+        if partition_by != "none":
+            cur.execute("select now()")
+            partitioning.create_partitions(cur, table, partition_by, cur.fetchone()[0])
+
+
+def create_raw_table(cur: Cursor, table: str, columns: list[str], partition_by: PartitionBy = "day") -> None:
     """Creates a raw table, if it does not exist: the source columns as text, then the
-    lineage columns, with the indexes that keep loads and incremental reads fast."""
+    lineage columns, partitioned by load time unless partition_by is none, with the
+    indexes that keep loads and incremental reads fast (created on every partition)."""
     schema, name = table.split(".")
     table_id = sql.Identifier(schema, name)
     definitions = [sql.SQL("{} text").format(sql.Identifier(c)) for c in columns] + [
         sql.SQL("{} {}").format(sql.Identifier(c), sql.SQL(definition))
         for c, definition in METADATA_COLUMNS.items()
     ]
+    partitioned = sql.SQL(" partition by range (_loaded_at)") if partition_by != "none" else sql.SQL("")
     cur.execute(
-        sql.SQL("create table if not exists {} ({})").format(table_id, sql.SQL(", ").join(definitions))
+        sql.SQL("create table if not exists {} ({}){}").format(
+            table_id, sql.SQL(", ").join(definitions), partitioned
+        )
     )
     # Keep the loader's delete of an earlier load fast as the table grows, and the
     # reads of incremental models downstream, which select the loads since their last run.

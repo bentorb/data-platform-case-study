@@ -57,8 +57,9 @@ def load_csv(
     schema_drift.py).
 
     A file whose data or structure cannot be loaded (e.g. a malformed CSV) raises
-    AirflowFailException, so the task fails without retrying; other errors are raised
-    as they are and retried.
+    AirflowFailException, so the task fails without retrying; other errors, including
+    a file that has not been delivered (FileNotFoundError), are raised as they are and
+    retried.
     """
     schema, name = table.split(".")
     table_id = sql.Identifier(schema, name)
@@ -76,6 +77,9 @@ def load_csv(
 
     load_id = load_log.start(hook, target_table=table, source_file=source_uri)
     try:
+        if not source.exists():
+            # Retried, like other errors: the file may only be late.
+            raise FileNotFoundError(f"{source_uri} has not been delivered")
         # The connection block commits on success, rolls back on error, then closes the
         # connection: everything below runs in one transaction.
         with hook.get_conn() as conn:

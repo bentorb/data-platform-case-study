@@ -2,12 +2,15 @@
 # The pipeline's name is the file's name. Fields: lib/pipelines/config.py.
 description: Loads customer transactions from the landing zone into the warehouse
 owner: data-platform
+# Each run covers one interval of the schedule, e.g. the previous day, and starts once
+# it has ended. Earlier days are backfilled on demand (see the README).
 schedule: "@daily"
 start_date: 2026-01-01
 ingestion:
   source:
     conn_id: landing_zone_s3
-    uri: s3://landing/customer_transactions.csv
+    # One file per day: rendered for each run with the day it covers.
+    uri: "s3://landing/customer_transactions/{{ data_interval_start | ds }}.csv"
   target:
     conn_id: warehouse_ingestion
     table: raw.customer_transactions

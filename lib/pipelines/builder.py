@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pendulum
 from airflow.sdk import DAG, dag, task
+from airflow.timetables.interval import CronDataIntervalTimetable
 
 from lib.ingestion.object_storage_to_postgres import load_csv
 from lib.orchestration.defaults import DEFAULT_ARGS
@@ -30,20 +31,33 @@ def build_pipeline(name: str) -> DAG:
         description=config.description,
         # The config, shown on the DAG's page in the UI.
         doc_md=f"Built from `pipelines/{name}.yml`:\n\n```yaml\n{config_path(name).read_text()}```",
-        schedule=config.schedule,
+        # Each run covers one whole interval, from data_interval_start to
+        # data_interval_end, and starts once it has ended: the run at midnight
+        # processes the previous day. In Airflow 3 a plain cron schedule gives
+        # zero-length intervals at the run time instead.
+        schedule=CronDataIntervalTimetable(config.schedule, timezone="UTC"),
         start_date=pendulum.datetime(
             config.start_date.year, config.start_date.month, config.start_date.day, tz="UTC"
         ),
         catchup=False,
         max_active_runs=1,  # dbt cannot rebuild the same model concurrently
-        default_args={**DEFAULT_ARGS, "owner": config.owner},
+        default_args={
+            **DEFAULT_ARGS,
+            "owner": config.owner,
+            # Runs are processed one after another in date order, backfills included:
+            # each task waits for the same task, and the ones right after it, in the
+            # previous run. Incremental models rely on loads arriving in order, so a
+            # failed day blocks later days until it is fixed or marked as success.
+            "depends_on_past": True,
+            "wait_for_downstream": True,
+        },
         tags=[name, "ingestion", "dbt"],
     )
     def pipeline():
         @task(task_id=f"load_{ingestion.target.table.replace('.', '_')}")
-        def load_raw_table() -> int:
+        def load_raw_table(source_uri: str) -> int:
             return load_csv(
-                source_uri=ingestion.source.uri,
+                source_uri=source_uri,
                 source_conn_id=ingestion.source.conn_id,
                 postgres_conn_id=ingestion.target.conn_id,
                 table=ingestion.target.table,
@@ -51,7 +65,8 @@ def build_pipeline(name: str) -> DAG:
             )
 
         # Build and test in core, then publish to live once every test has passed.
-        load = load_raw_table()
+        # The source URI is templated, e.g. with the day the run covers.
+        load = load_raw_table(ingestion.source.uri)
         transform = build_dbt_task_group(select=select)
         models = selected_models(transform)
         publish = build_dbt_publish_task(models)

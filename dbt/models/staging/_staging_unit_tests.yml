@@ -1,0 +1,65 @@
+# Unit tests: the model's logic on given input rows, run in CI and with
+# `docker compose run --rm tests`, never in pipeline runs (see docs/testing.md).
+# Columns left out of an input row are null; only the columns listed in `expect` are compared.
+unit_tests:
+  - name: stg_types_clean_values
+    model: stg_customer_transactions
+    given:
+      - input: source('raw', 'customer_transactions')
+        rows:
+          - {transaction_id: "1001", customer_id: "501.0", transaction_date: "2023-07-11", product_id: "101",
+             product_name: " Product A ", quantity: "2.0", price: "10.5", tax: "1.05"}
+    expect:
+      rows:
+        - {transaction_id: 1001, customer_id: 501, transaction_date: 2023-07-11, product_id: 101,
+           product_name: Product A, quantity: 2, price: 10.50, tax: 1.05, dq_warnings: "{}", dq_errors: "{}"}
+
+  - name: stg_repairs_alternative_formats
+    description: Letter prefixes and DD-MM-YYYY dates are repaired, and each repair is a warning.
+    model: stg_customer_transactions
+    given:
+      - input: source('raw', 'customer_transactions')
+        rows:
+          - {transaction_id: "T1002", customer_id: "502", transaction_date: "12-07-2023", product_id: "P102",
+             product_name: "Product B", quantity: "1", price: "5", tax: "0.5"}
+    expect:
+      rows:
+        - {transaction_id: 1002, transaction_date: 2023-07-12, product_id: 102,
+           dq_warnings: "{transaction_id_prefixed,transaction_date_dmy,product_id_prefixed}", dq_errors: "{}"}
+
+  - name: stg_flags_missing_and_invalid_values
+    description: Empty values are missing, unparseable ones invalid; both become null and errors.
+    model: stg_customer_transactions
+    given:
+      - input: source('raw', 'customer_transactions')
+        rows:
+          - {transaction_id: "1003", customer_id: "", transaction_date: "2023-07-13", product_id: "103",
+             product_name: "  ", quantity: "x", price: "abc", tax: null}
+    expect:
+      rows:
+        - {transaction_id: 1003, customer_id: null, product_name: null, quantity: null, price: null, tax: null,
+           dq_warnings: "{}",
+           dq_errors: "{customer_id_missing,product_name_missing,quantity_invalid,price_invalid,tax_missing}"}
+
+  - name: stg_flags_dates_that_do_not_exist
+    description: >
+      A date matching a format but not existing is invalid, like any other unusable
+      value, instead of failing the query. Leap years are respected.
+    model: stg_customer_transactions
+    given:
+      - input: source('raw', 'customer_transactions')
+        rows:
+          - {transaction_id: "1004", transaction_date: "2023-02-30", customer_id: "1", product_id: "1", product_name: P, quantity: "1", price: "1", tax: "0"}
+          - {transaction_id: "1005", transaction_date: "31-04-2023", customer_id: "1", product_id: "1", product_name: P, quantity: "1", price: "1", tax: "0"}
+          - {transaction_id: "1006", transaction_date: "0000-01-01", customer_id: "1", product_id: "1", product_name: P, quantity: "1", price: "1", tax: "0"}
+          - {transaction_id: "1007", transaction_date: "2024-02-29", customer_id: "1", product_id: "1", product_name: P, quantity: "1", price: "1", tax: "0"}
+          - {transaction_id: "1008", transaction_date: "29-02-2023", customer_id: "1", product_id: "1", product_name: P, quantity: "1", price: "1", tax: "0"}
+          - {transaction_id: "1009", transaction_date: "29-02-2024", customer_id: "1", product_id: "1", product_name: P, quantity: "1", price: "1", tax: "0"}
+    expect:
+      rows:
+        - {transaction_id: 1004, transaction_date: null, dq_warnings: "{}", dq_errors: "{transaction_date_invalid}"}
+        - {transaction_id: 1005, transaction_date: null, dq_warnings: "{}", dq_errors: "{transaction_date_invalid}"}
+        - {transaction_id: 1006, transaction_date: null, dq_warnings: "{}", dq_errors: "{transaction_date_invalid}"}
+        - {transaction_id: 1007, transaction_date: 2024-02-29, dq_warnings: "{}", dq_errors: "{}"}
+        - {transaction_id: 1008, transaction_date: null, dq_warnings: "{}", dq_errors: "{transaction_date_invalid}"}
+        - {transaction_id: 1009, transaction_date: 2024-02-29, dq_warnings: "{transaction_date_dmy}", dq_errors: "{}"}

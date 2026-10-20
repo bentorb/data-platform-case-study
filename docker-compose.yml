@@ -188,18 +188,22 @@ services:
   # Runs the test suite (tests/) in the Airflow image plus the test packages, against
   # the working copies of the code. Not started by `docker compose up`; run it with
   # `docker compose run --rm tests`, or e.g. `docker compose run --rm tests tests/unit -k drift`.
+  # Tests that need the warehouse are skipped when the stack is not running.
   tests:
     build:
       <<: *airflow-build
       target: test
     image: data-platform-airflow-test:local
     profiles: ["test"]
+    # The Airflow services' settings, e.g. the warehouse connections the tests use.
+    environment: *airflow-common-env
     entrypoint: ["python", "-m", "pytest"]
-    command: ["tests/unit"]
+    command: ["tests"]
     working_dir: /opt/data-platform
     volumes:
       - ./lib:/opt/data-platform/lib:ro
       - ./pipelines:/opt/data-platform/pipelines:ro
+      - ./dbt:/opt/dbt:ro
       - ./tests:/opt/data-platform/tests:ro
       - ./pyproject.toml:/opt/data-platform/pyproject.toml:ro
     restart: "no"

@@ -1,0 +1,28 @@
+# Unit tests: the models' logic on given input rows, run in CI and with
+# `docker compose run --rm tests`, never in pipeline runs (see docs/testing.md).
+unit_tests:
+  - name: agg_daily_sales_counts_rejected_transactions
+    description: >
+      Completeness is the share of a day's transactions that passed the data-quality
+      checks; a day with only rejected transactions still appears, with zero sales.
+    model: agg_daily_sales
+    # Every expected row lists the same columns, and numbers are written with the
+    # model's scale (as strings, so YAML keeps it): dbt compares them as one table.
+    given:
+      - input: ref('fct_transactions')
+        rows:
+          - {transaction_id: 1, transaction_date: 2023-07-10, customer_id: 1, quantity: 2, net_amount: 20, tax_amount: 2, gross_amount: 22}
+          - {transaction_id: 2, transaction_date: 2023-07-10, customer_id: 2, quantity: 1, net_amount: 10, tax_amount: 1, gross_amount: 11}
+      - input: ref('stg_customer_transactions')
+        rows:
+          - {transaction_id: 3, transaction_date: 2023-07-10, dq_errors: "{price_invalid}"}
+          - {transaction_id: 4, transaction_date: 2023-07-11, dq_errors: "{quantity_missing}"}
+          - {transaction_id: 5, transaction_date: null, dq_errors: "{transaction_date_invalid}"}
+          - {transaction_id: 1, transaction_date: 2023-07-10, dq_errors: "{}"}
+    expect:
+      rows:
+        - {transaction_date: 2023-07-10, transactions: 2, units: 3, customers: 2, net_amount: "30.00",
+           gross_amount: "33.00", rejected_transactions: 1, completeness: "0.6667"}
+        # Compared before the contract's cast: coalesce(..., 0) gives 0, stored as 0.00.
+        - {transaction_date: 2023-07-11, transactions: 0, units: 0, customers: 0, net_amount: 0,
+           gross_amount: 0, rejected_transactions: 1, completeness: "0.0000"}

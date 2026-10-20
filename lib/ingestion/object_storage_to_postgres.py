@@ -14,7 +14,7 @@ import logging
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.sdk import ObjectStoragePath
 from airflow.sdk.exceptions import AirflowFailException
-from psycopg import DataError, sql
+from psycopg import Cursor, DataError, sql
 
 from lib.ingestion import load_log, schema_drift
 
@@ -63,15 +63,8 @@ def load_csv(
     """
     schema, name = table.split(".")
     table_id = sql.Identifier(schema, name)
-    source_file_index_id = sql.Identifier(f"{name}__source_file_idx")
-    load_id_index_id = sql.Identifier(f"{name}__load_id_idx")
     incoming_id = sql.Identifier("_incoming")
     column_list = sql.SQL(", ").join(map(sql.Identifier, columns))
-    text_columns = [sql.SQL("{} text").format(sql.Identifier(c)) for c in columns]
-    metadata_columns = [
-        sql.SQL("{} {}").format(sql.Identifier(c), sql.SQL(definition))
-        for c, definition in METADATA_COLUMNS.items()
-    ]
     source = ObjectStoragePath(source_uri, conn_id=source_conn_id)
     hook = PostgresHook(postgres_conn_id=postgres_conn_id)
 
@@ -98,24 +91,7 @@ def load_csv(
                 extra_columns = schema_drift.check_header(header, columns, list(METADATA_COLUMNS))
                 schema_drift.check_table(cur, schema, name, columns + list(METADATA_COLUMNS))
 
-                cur.execute(
-                    sql.SQL("create table if not exists {} ({})").format(
-                        table_id, sql.SQL(", ").join(text_columns + metadata_columns)
-                    )
-                )
-                # Keep the delete below fast as the table grows, and the reads of
-                # incremental models downstream, which select the loads since their
-                # last run.
-                cur.execute(
-                    sql.SQL("create index if not exists {} on {} (_source_file)").format(
-                        source_file_index_id, table_id
-                    )
-                )
-                cur.execute(
-                    sql.SQL("create index if not exists {} on {} (_load_id)").format(
-                        load_id_index_id, table_id
-                    )
-                )
+                create_raw_table(cur, table, columns)
 
                 # COPY into a temporary table with the file's own columns, then insert
                 # the expected ones by name, adding the metadata. The identity column
@@ -174,3 +150,23 @@ def load_csv(
         load_id, rows, source_uri, table, replaced,
     )
     return rows
+
+
+def create_raw_table(cur: Cursor, table: str, columns: list[str]) -> None:
+    """Creates a raw table, if it does not exist: the source columns as text, then the
+    lineage columns, with the indexes that keep loads and incremental reads fast."""
+    schema, name = table.split(".")
+    table_id = sql.Identifier(schema, name)
+    definitions = [sql.SQL("{} text").format(sql.Identifier(c)) for c in columns] + [
+        sql.SQL("{} {}").format(sql.Identifier(c), sql.SQL(definition))
+        for c, definition in METADATA_COLUMNS.items()
+    ]
+    cur.execute(sql.SQL("create table if not exists {} ({})").format(table_id, sql.SQL(", ").join(definitions)))
+    # Keep the loader's delete of an earlier load fast as the table grows, and the
+    # reads of incremental models downstream, which select the loads since their last run.
+    for column in ("_source_file", "_load_id"):
+        cur.execute(
+            sql.SQL("create index if not exists {} on {} ({})").format(
+                sql.Identifier(f"{name}_{column}_idx"), table_id, sql.Identifier(column)
+            )
+        )

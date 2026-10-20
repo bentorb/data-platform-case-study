@@ -46,6 +46,9 @@ def build_dbt_task_group(group_id: str = "dbt", select: list[str] | None = None)
                 # one that is, rather than when any is (dbt's default): a test of
                 # models built by another pipeline is left to that pipeline.
                 "DBT_INDIRECT_SELECTION": "buildable",
+                # Unit tests check code, not data, so they run in CI and with the tests
+                # service, not in pipelines: `dbt test --select <model>` would run them too.
+                "DBT_EXCLUDE_RESOURCE_TYPES": "unit_test",
             },
         ),
         profile_config=PROFILE_CONFIG,

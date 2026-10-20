@@ -15,6 +15,8 @@ from cosmos import DbtTaskGroup, ExecutionConfig, ProfileConfig, ProjectConfig, 
 from cosmos.constants import DbtResourceType, ExecutionMode, InvocationMode, LoadMode, TestBehavior
 from cosmos.operators.local import DbtRunOperationLocalOperator
 
+from lib.orchestration.callbacks import notify_warning
+
 # Set by docker-compose.yml; defaults to the dbt/ folder at the repo root.
 DBT_PROJECT_PATH = Path(os.environ.get("DBT_PROJECT_PATH", Path(__file__).resolve().parents[2] / "dbt"))
 # dbt is installed in its own virtualenv in the Airflow image.
@@ -71,6 +73,9 @@ def build_dbt_task_group(group_id: str = "dbt", select: list[str] | None = None)
             # all those models are built, instead of with one of them.
             should_detach_multiple_parents_tests=True,
         ),
+        # Tests that warn do not fail their task, so they are sent to the owner's alert
+        # webhook by this callback instead.
+        on_warning_callback=notify_warning,
     )
     if not selected_models(task_group):
         raise ValueError(f"The dbt selection {select} matches no models")

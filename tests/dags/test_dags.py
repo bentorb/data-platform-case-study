@@ -9,7 +9,7 @@ from airflow.configuration import conf
 from airflow.dag_processing.dagbag import DagBag
 from airflow.timetables.interval import CronDataIntervalTimetable
 
-from lib.orchestration.callbacks import notify_failure
+from lib.orchestration.callbacks import notify_failure, notify_warning
 from lib.pipelines.config import PIPELINES_PATH, load_config
 
 PIPELINES = sorted(path.stem for path in PIPELINES_PATH.glob("*.yml"))
@@ -68,6 +68,11 @@ def test_pipeline_dag(dagbag, name):
     assert [t.task_id for t in dag.roots] == [f"load_{table}"]
     assert [t.task_id for t in dag.leaves] == ["publish"]
     assert len(dag.get_task("publish").get_flat_relatives(upstream=True)) == len(dag.tasks) - 1
+
+    # Tests that warn are sent to the owner too, since they do not fail their task.
+    test_tasks = [t for t in dag.tasks if t.task_type.startswith("DbtTest")]
+    assert test_tasks
+    assert not [t.task_id for t in test_tasks if t.on_warning_callback is not notify_warning]
 
     # Unit tests check code, not data: never part of a pipeline run.
     assert not [t.task_id for t in dag.tasks if "unit_test" in t.task_id]

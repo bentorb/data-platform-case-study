@@ -7,7 +7,9 @@ CREATE TABLE audit.load_log (
   load_id       bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   target_table  text        NOT NULL,
   source_file   text        NOT NULL,
-  status        text        NOT NULL CHECK (status IN ('running', 'success', 'failed')),
+  -- skipped: the file was identical to the one of its latest successful load, whose rows
+  -- are still loaded, so nothing was changed.
+  status        text        NOT NULL CHECK (status IN ('running', 'success', 'failed', 'skipped')),
   rows_loaded   bigint,
   rows_replaced bigint,
   started_at    timestamptz NOT NULL,
@@ -15,6 +17,8 @@ CREATE TABLE audit.load_log (
   error_message text,
   -- Columns in the file that the load did not expect, so did not load.
   schema_drift  text[],
+  -- SHA-256 of the file's bytes, to recognise a file delivered again unchanged.
+  checksum      text,
   -- The Airflow task attempt that ran the load; null when run outside Airflow.
   dag_id        text,
   run_id        text,

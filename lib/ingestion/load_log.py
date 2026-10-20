@@ -31,17 +31,47 @@ def start(hook: PostgresHook, *, target_table: str, source_file: str) -> int:
 
 
 def succeed(
-    cur: Cursor, load_id: int, *, rows_loaded: int, rows_replaced: int, schema_drift: list[str]
+    cur: Cursor,
+    load_id: int,
+    *,
+    rows_loaded: int,
+    rows_replaced: int,
+    schema_drift: list[str],
+    checksum: str,
 ) -> None:
     """Marks a load successful, with the file's extra columns that were not loaded (if
-    any). Runs on the load's own cursor, inside its transaction."""
+    any) and its checksum. Runs on the load's own cursor, inside its transaction."""
     cur.execute(
         "update audit.load_log"
         " set status = 'success', rows_loaded = %s, rows_replaced = %s, schema_drift = %s,"
-        " finished_at = clock_timestamp()"
+        " checksum = %s, finished_at = clock_timestamp()"
         " where load_id = %s",
-        (rows_loaded, rows_replaced, schema_drift or None, load_id),
+        (rows_loaded, rows_replaced, schema_drift or None, checksum, load_id),
     )
+
+
+def skip(cur: Cursor, load_id: int, *, schema_drift: list[str], checksum: str) -> None:
+    """Marks a load skipped: the file was identical to the one already loaded. Runs on
+    the load's own cursor, inside its transaction."""
+    cur.execute(
+        "update audit.load_log"
+        " set status = 'skipped', rows_loaded = 0, rows_replaced = 0, schema_drift = %s,"
+        " checksum = %s, finished_at = clock_timestamp()"
+        " where load_id = %s",
+        (schema_drift or None, checksum, load_id),
+    )
+
+
+def latest_success(cur: Cursor, *, target_table: str, source_file: str) -> tuple[int, str | None] | None:
+    """The load_id and checksum of the latest successful load of a file into a table, or
+    None if it was never loaded."""
+    cur.execute(
+        "select load_id, checksum from audit.load_log"
+        " where target_table = %s and source_file = %s and status = 'success'"
+        " order by load_id desc limit 1",
+        (target_table, source_file),
+    )
+    return cur.fetchone()
 
 
 def fail(hook: PostgresHook, load_id: int, error: BaseException) -> None:

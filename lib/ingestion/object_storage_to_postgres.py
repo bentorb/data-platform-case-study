@@ -9,7 +9,9 @@ Switching storage is a configuration change in the DAG.
 
 from __future__ import annotations
 
+import hashlib
 import logging
+from typing import BinaryIO
 
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.sdk import ObjectStoragePath
@@ -42,7 +44,9 @@ def load_csv(
     """Loads the rows of a CSV file into a table, creating the table if it does not exist.
 
     Idempotent: rows previously loaded from the same file are replaced, so re-running
-    a load never duplicates data. Concurrent loads of the same file into the same table
+    a load never duplicates data. A file identical to the one of its latest successful
+    load, whose rows are still in the table, is not loaded again: the load is logged as
+    skipped, and nothing downstream changes. Concurrent loads of the same file into the same table
     run one after the other.
 
     Every source column is created as text, so malformed values cannot break the load;
@@ -76,7 +80,9 @@ def load_csv(
         # The connection block commits on success, rolls back on error, then closes the
         # connection: everything below runs in one transaction.
         with hook.get_conn() as conn:
-            with conn.cursor() as cur, source.open("rb", block_size=CHUNK_SIZE) as stream:
+            with conn.cursor() as cur, source.open("rb", block_size=CHUNK_SIZE) as raw_stream:
+                # Hashes the bytes as they are read, so the file is read only once.
+                stream = HashingStream(raw_stream)
                 # Serialises loads of the same file into the same table: without it, two
                 # concurrent loads could both delete before either inserts, leaving both
                 # copies. Released automatically when the transaction ends.
@@ -113,6 +119,22 @@ def load_csv(
                 with cur.copy(copy_sql) as copy:
                     while chunk := stream.read(CHUNK_SIZE):
                         copy.write(chunk)
+                checksum = stream.hexdigest()
+
+                # A file identical to its latest successful load, whose rows are still
+                # here, changes nothing: skip it. Within the advisory lock, so two loads
+                # of the file cannot both decide it changed.
+                identical_to = _identical_load(cur, table, source_uri, checksum)
+                if identical_to is not None:
+                    load_log.skip(cur, load_id, schema_drift=extra_columns, checksum=checksum)
+                    log.info(
+                        "Load %s: %s is identical to load %s, already in %s: skipped",
+                        load_id,
+                        source_uri,
+                        identical_to,
+                        table,
+                    )
+                    return 0
 
                 # Replace the rows of any earlier load of this file. Same transaction as the
                 # insert, so readers never see the table without them.
@@ -139,6 +161,7 @@ def load_csv(
                     rows_loaded=rows,
                     rows_replaced=replaced,
                     schema_drift=extra_columns,
+                    checksum=checksum,
                 )
     except Exception as error:
         load_log.fail(hook, load_id, error)
@@ -179,3 +202,39 @@ def create_raw_table(cur: Cursor, table: str, columns: list[str]) -> None:
                 sql.Identifier(f"{name}_{column}_idx"), table_id, sql.Identifier(column)
             )
         )
+
+
+class HashingStream:
+    """Wraps a binary stream, computing the SHA-256 of the bytes read through it."""
+
+    def __init__(self, stream: BinaryIO):
+        self._stream = stream
+        self._hash = hashlib.sha256()
+
+    def read(self, size: int = -1) -> bytes:
+        data = self._stream.read(size)
+        self._hash.update(data)
+        return data
+
+    # Without a size: object storage files (fsspec's) accept none.
+    def readline(self) -> bytes:
+        data = self._stream.readline()
+        self._hash.update(data)
+        return data
+
+    def hexdigest(self) -> str:
+        return self._hash.hexdigest()
+
+
+def _identical_load(cur: Cursor, table: str, source_uri: str, checksum: str) -> int | None:
+    """The latest successful load of the file into the table, if its checksum is the same
+    and its rows are still in the table (retention, for instance, may have expired them)."""
+    latest = load_log.latest_success(cur, target_table=table, source_file=source_uri)
+    if latest is None or latest[1] != checksum:
+        return None
+    schema, name = table.split(".")
+    cur.execute(
+        sql.SQL("select exists (select 1 from {} where _load_id = %s)").format(sql.Identifier(schema, name)),
+        (latest[0],),
+    )
+    return latest[0] if cur.fetchone()[0] else None

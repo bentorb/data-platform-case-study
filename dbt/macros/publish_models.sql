@@ -50,6 +50,15 @@
     statements would each be committed on their own by dbt run-operation.)
 -#}
 {%- set statements = ['begin'] -%}
+{#-
+    No build of these models while publishing: a core table replaced between the delete
+    and the insert would leave live a mix of both versions. Their build locks
+    (macros/model_lock.sql), until the transaction ends, in a fixed order so that
+    publishes sharing models cannot deadlock.
+-#}
+{%- for model in plan | sort(attribute='name') -%}
+    {%- do statements.append("select pg_advisory_xact_lock(" ~ model_lock_key(model.source) ~ ")") -%}
+{%- endfor -%}
 {%- for model in plan -%}
     {%- set log_key = "invocation_id = " ~ sql_text_literal(invocation_id) ~ " and model = " ~ sql_text_literal(model.name) -%}
     {%- if not model.exists -%}

@@ -47,7 +47,6 @@ def build_pipeline(name: str) -> DAG:
             config.start_date.year, config.start_date.month, config.start_date.day, tz="UTC"
         ),
         catchup=False,
-        max_active_runs=1,  # dbt cannot rebuild the same model concurrently
         default_args={
             **DEFAULT_ARGS,
             "owner": config.owner,

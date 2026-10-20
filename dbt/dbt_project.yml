@@ -17,6 +17,14 @@ on-run-end:
 # (see macros/generate_schema_name.sql).
 models:
   data_platform:
+    # One build of a model at a time, whoever runs dbt (macros/model_lock.sql).
+    # Outside the model's transaction, around everything dbt does to build it.
+    +pre-hook:
+      - sql: "{{ lock_model(this) }}"
+        transaction: false
+    +post-hook:
+      - sql: "{{ unlock_model(this) }}"
+        transaction: false
     staging:
       +schema: staging
       +materialized: view

@@ -55,9 +55,8 @@ def test_pipeline_dag(dagbag, name):
     config = load_config(name)
     table = config.ingestion.target.table.replace(".", "_")
 
-    # Each run covers a whole interval, one run at a time.
+    # Each run covers a whole interval.
     assert isinstance(dag.timetable, CronDataIntervalTimetable)
-    assert dag.max_active_runs == 1
     assert config.ingestion.source.uri in dag.doc_md
 
     for task in dag.tasks:

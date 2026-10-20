@@ -14,7 +14,8 @@ psql -v ON_ERROR_STOP=1 \
   -v ingestion_password="$WAREHOUSE_INGESTION_PASSWORD" \
   -v transformation_password="$WAREHOUSE_TRANSFORMATION_PASSWORD" \
   -v analytics_password="$WAREHOUSE_ANALYTICS_PASSWORD" \
-  -v analytics_restricted_password="$WAREHOUSE_ANALYTICS_RESTRICTED_PASSWORD" <<'EOSQL'
+  -v analytics_restricted_password="$WAREHOUSE_ANALYTICS_RESTRICTED_PASSWORD" \
+  -v maintenance_password="$WAREHOUSE_MAINTENANCE_PASSWORD" <<'EOSQL'
 
 -- Group roles: carry privileges, cannot log in
 CREATE ROLE ingestion NOLOGIN;       -- writes raw data
@@ -23,11 +24,14 @@ CREATE ROLE analytics NOLOGIN;       -- read-only on live, except restricted col
 -- Everything analytics can read, plus columns classified as restricted (personal or
 -- otherwise sensitive data). Granting someone that access means adding a member.
 CREATE ROLE analytics_restricted NOLOGIN IN ROLE analytics;
+-- Expires old audit entries; pipelines can only add to them.
+CREATE ROLE maintenance NOLOGIN;
 
 -- Login users: one per service, inheriting privileges from their group role
 CREATE USER ingestion_service PASSWORD :'ingestion_password' IN ROLE ingestion;
 CREATE USER transformation_service PASSWORD :'transformation_password' IN ROLE transformation;
 CREATE USER analytics_service PASSWORD :'analytics_password' IN ROLE analytics;
 CREATE USER analytics_restricted_service PASSWORD :'analytics_restricted_password' IN ROLE analytics_restricted;
+CREATE USER maintenance_service PASSWORD :'maintenance_password' IN ROLE maintenance;
 
 EOSQL

@@ -120,3 +120,27 @@ CREATE INDEX publish_log_model_idx ON audit.publish_log (model, published_at);
 -- UPDATE fills in rows_inserted, within the same transaction. Consumers may read it.
 GRANT SELECT, INSERT, UPDATE ON audit.publish_log TO transformation;
 GRANT SELECT ON audit.publish_log TO analytics;
+
+-- One row per table and expiry run: what retention deleted, and why. Written by
+-- platform maintenance (lib/maintenance/retention.py) and by pipelines expiring their
+-- own data, in the same transaction as the deletion. Never expired itself.
+CREATE TABLE audit.retention_log (
+  retention_id  bigint      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  target_table  text        NOT NULL,
+  -- Rows older than this were expired.
+  cutoff        timestamptz NOT NULL,
+  rows_deleted  bigint      NOT NULL,
+  deleted_at    timestamptz NOT NULL DEFAULT now(),
+  -- The Airflow task attempt that expired the rows; null when run outside Airflow.
+  dag_id        text,
+  run_id        text,
+  task_id       text,
+  try_number    integer
+);
+
+-- Pipelines only add audit entries; maintenance alone may expire them, and records
+-- every expiry in retention_log.
+GRANT SELECT, DELETE ON audit.load_log, audit.dbt_run_results, audit.dq_load_summary,
+  audit.dq_issue_counts, audit.publish_log TO maintenance;
+GRANT SELECT, INSERT ON audit.retention_log TO maintenance, ingestion, transformation;
+GRANT SELECT ON audit.retention_log TO analytics;

@@ -4,7 +4,7 @@
 -- Database access: only our roles can connect.
 -- :"DBNAME" is a psql variable holding the current database name.
 REVOKE ALL ON DATABASE :"DBNAME" FROM PUBLIC;
-GRANT CONNECT ON DATABASE :"DBNAME" TO ingestion, transformation, analytics;  -- analytics_restricted inherits it
+GRANT CONNECT ON DATABASE :"DBNAME" TO ingestion, transformation, analytics, maintenance;  -- analytics_restricted inherits it
 -- Ingestion stages each file in a temporary table before inserting it into raw;
 -- dbt does the same for incremental models.
 GRANT TEMPORARY ON DATABASE :"DBNAME" TO ingestion, transformation;
@@ -37,7 +37,7 @@ GRANT USAGE ON SCHEMA live TO analytics;
 -- audit: written by both ingestion and transformation. Analytics may only read the
 -- tables granted to it explicitly (the data-quality history, see 03-create-audit-tables.sql).
 GRANT USAGE, CREATE ON SCHEMA audit TO ingestion, transformation;
-GRANT USAGE ON SCHEMA audit TO analytics;
+GRANT USAGE ON SCHEMA audit TO analytics, maintenance;
 
 -- Default privileges: grants for tables created in the future.
 -- FOR ROLE names the user that will create the tables.

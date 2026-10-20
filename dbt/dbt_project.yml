@@ -22,7 +22,7 @@ models:
       +materialized: view
       # Each staging model records the data-quality issues of its loads in audit.
       +post-hook: "{{ record_dq_issues(this) }}"
-    # Tables: core is what analysts query, so reads should be fast and stable.
+    # Tables, built and tested here, then published to live for consumers.
     # Every core model must declare its columns and types (a contract), and dbt
     # creates the table from that declaration rather than from the query.
     core:
@@ -30,6 +30,9 @@ models:
       +materialized: table
       +contract:
         enforced: true
+      # A model with a retention (config.meta.retention) deletes its expired rows as
+      # part of being built.
+      +post-hook: "{{ expire_rows(this) }}"
 
 # Each test's failing rows are saved as a table in audit, replaced on every run.
 data_tests:

@@ -1,4 +1,5 @@
-"""Expires old entries from the platform's audit tables, and old files such as task logs.
+"""Expires old data: entries of the platform's audit tables, files such as task logs,
+and the rows of raw tables older than their retention.
 
 Each table is kept for a number of days, and older entries are deleted in one
 transaction, each deletion recorded in audit.retention_log. Load log entries are
@@ -16,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from airflow.providers.postgres.hooks.postgres import PostgresHook
+from psycopg import sql
 
 from lib.orchestration.context import airflow_task_attempt
 
@@ -136,3 +138,39 @@ def delete_old_files(folder: str, days: int) -> int:
             path.rmdir()
     log.info("Deleted %s files older than %s days from %s", deleted, days, folder)
     return deleted
+
+
+def expire_raw_files(*, postgres_conn_id: str, table: str, days: int) -> int:
+    """Deletes from a raw table the rows of every file whose latest successful load is
+    older than `days` days, recording the expiry in audit.retention_log. Whole files
+    are expired, the unit loads replace. Returns the number of rows deleted."""
+    schema, name = table.split(".")
+    hook = PostgresHook(postgres_conn_id=postgres_conn_id)
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            sql.SQL("""
+                with expired_files as (
+                    select source_file
+                    from audit.load_log
+                    where target_table = %(table)s and status = 'success'
+                    group by source_file
+                    having max(started_at) < now() - make_interval(days => %(days)s)
+                ),
+                deleted as (
+                    delete from {table}
+                    where _source_file in (select source_file from expired_files)
+                    returning 1
+                )
+                select now() - make_interval(days => %(days)s), count(*) from deleted
+            """).format(table=sql.Identifier(schema, name)),
+            {"table": table, "days": days},
+        )
+        cutoff, rows = cur.fetchone()
+        cur.execute(
+            "insert into audit.retention_log"
+            " (target_table, cutoff, rows_deleted, dag_id, run_id, task_id, try_number)"
+            " values (%s, %s, %s, %s, %s, %s, %s)",
+            (table, cutoff, rows, *airflow_task_attempt()),
+        )
+    log.info("Expired %s rows from %s, of files last loaded before %s", rows, table, cutoff)
+    return rows

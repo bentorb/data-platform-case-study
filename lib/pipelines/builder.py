@@ -13,9 +13,15 @@ from airflow.sdk import DAG, dag, task
 from airflow.timetables.interval import CronDataIntervalTimetable
 
 from lib.ingestion.object_storage_to_postgres import load_csv
+from lib.maintenance.retention import expire_raw_files
 from lib.orchestration.defaults import DEFAULT_ARGS
 from lib.pipelines.config import config_path, load_config
-from lib.transformation.dbt import build_dbt_publish_task, build_dbt_task_group, selected_models
+from lib.transformation.dbt import (
+    build_dbt_publish_task,
+    build_dbt_task_group,
+    core_retention,
+    selected_models,
+)
 
 
 def build_pipeline(name: str) -> DAG:
@@ -71,6 +77,41 @@ def build_pipeline(name: str) -> DAG:
         models = selected_models(transform)
         publish = build_dbt_publish_task(models)
 
-        load >> transform >> publish
+        # Core models expire their own rows as they are built (dbt/macros/expire_rows.sql).
+        # Raw is expired before building, and only if every core model built on it has a
+        # retention: it must keep their history for full refreshes.
+        raw_days = raw_retention_days(name, ingestion.retention_days, core_retention(transform))
+        if raw_days is not None:
+
+            @task(task_id=f"expire_{ingestion.target.table.replace('.', '_')}")
+            def expire_raw_table() -> int:
+                return expire_raw_files(
+                    postgres_conn_id=ingestion.target.conn_id, table=ingestion.target.table, days=raw_days
+                )
+
+            load >> expire_raw_table() >> transform
+        else:
+            load >> transform
+        transform >> publish
 
     return pipeline()
+
+
+def raw_retention_days(name: str, configured: int | None, core: dict[str, int | None]) -> int | None:
+    """Days the raw table keeps a file's rows: at least as long as the longest-lived core
+    model built on it, so a full refresh can rebuild their history, or longer if the
+    config says so. None keeps raw forever: when any of those models is kept forever."""
+    if not core or any(days is None for days in core.values()):
+        if configured is not None:
+            raise ValueError(
+                f"{name}: ingestion.retention_days is set, but core models built on its table"
+                " are kept forever, so raw must be too"
+            )
+        return None
+    needed = max(core.values())
+    if configured is not None and configured < needed:
+        raise ValueError(
+            f"{name}: ingestion.retention_days ({configured}) is shorter than the retention of"
+            f" the core models built on its table ({needed} days)"
+        )
+    return configured or needed

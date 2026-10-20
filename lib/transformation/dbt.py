@@ -80,6 +80,28 @@ def selected_models(task_group: DbtTaskGroup) -> list[str]:
     return sorted(node.resource_name for node in nodes if node.resource_type == DbtResourceType.MODEL)
 
 
+def core_retention(task_group: DbtTaskGroup) -> dict[str, int | None]:
+    """The retention of each core model a task group builds, in days, from the model's
+    config.meta.retention ({column: ..., days: ...}); None keeps it forever, the default.
+    An invalid retention raises ValueError."""
+    retention = {}
+    for node in task_group.dbt_graph.filtered_nodes.values():
+        if node.resource_type != DbtResourceType.MODEL or node.config.get("schema") != "core":
+            continue
+        setting = (node.config.get("meta") or {}).get("retention")
+        if setting is None:
+            retention[node.resource_name] = None
+            continue
+        days = setting.get("days") if isinstance(setting, dict) else None
+        if not (isinstance(days, int) and days > 0 and isinstance(setting.get("column"), str)):
+            raise ValueError(
+                f"{node.resource_name}: retention must be {{column: <date column>, days: <positive integer>}},"
+                f" not {setting!r}"
+            )
+        retention[node.resource_name] = days
+    return retention
+
+
 def build_dbt_publish_task(models: list[str], task_id: str = "publish") -> DbtRunOperationLocalOperator:
     """Returns a task that publishes `models` from core to live in one transaction (see
     dbt/macros/publish_models.sql). Models outside core are ignored. Placed after the

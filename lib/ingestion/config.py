@@ -31,6 +31,10 @@ class IngestionConfig(StrictModel):
     target: Target
     # The columns the file must have; see schema_drift.py.
     columns: list[Identifier] = Field(min_length=1)
+    # Days the raw table keeps a file's rows after its latest load. Unset, as long as
+    # the core models built on it need (see lib/pipelines/builder.py); it cannot be
+    # shorter, or a full refresh could not rebuild their history.
+    retention_days: int | None = Field(default=None, gt=0)
 
     @field_validator("columns")
     @classmethod

@@ -6,6 +6,7 @@ models:
     data_tests:
       # Warns, not fails: rejected rows make core incomplete, not wrong.
       - max_error_rate:
+          name: stg_customer_transactions_error_rate_within_limit
           arguments:
             threshold: 0.1
           config:
@@ -13,6 +14,7 @@ models:
       # Volume: the newest load's rows within 50% of the median of the 14 loads before
       # it, once there are 7. Warns: an unusual volume is worth a look, not a stop.
       - volume_within_range:
+          name: stg_customer_transactions_volume_within_range
           arguments:
             lookback: 14
             min_history: 7

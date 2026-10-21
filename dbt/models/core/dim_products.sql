@@ -6,7 +6,7 @@
 -- Incremental, and history is never rewritten: each run takes the new loads'
 -- transactions dated after a product's last_seen_on and applies them in date order
 -- to its current version. Earlier transactions whose name disagrees with the version
--- covering their date are not applied: tests/core/assert_product_names_match_dim.sql
+-- covering their date are not applied: tests/core/dim_products_names_match_transactions.sql
 -- warns about them, and a full refresh of dim_products+ applies them.
 
 {{

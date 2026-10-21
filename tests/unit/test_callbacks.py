@@ -89,7 +89,7 @@ def test_warnings_go_to_the_owners_webhook(monkeypatch, posts):
     callbacks.notify_warning(
         warning_context(
             "sales-data",
-            ["fct_transactions_is_recent", "max_error_rate_stg_orders"],
+            ["fct_transactions_is_recent", "stg_orders_error_rate_within_limit"],
             ["Got 1 result, configured to warn if != 0", "Got 2 results, configured to warn if != 0"],
         )
     )
@@ -97,7 +97,7 @@ def test_warnings_go_to_the_owners_webhook(monkeypatch, posts):
     message = posts[0][1]
     assert "dbt tests warned: orders_pipeline.load" in message and "Owner: sales-data" in message
     assert "- fct_transactions_is_recent: Got 1 result, configured to warn if != 0" in message
-    assert "- max_error_rate_stg_orders: Got 2 results, configured to warn if != 0" in message
+    assert "- stg_orders_error_rate_within_limit: Got 2 results, configured to warn if != 0" in message
 
 
 def test_a_warning_whose_tests_were_not_parsed_still_alerts(monkeypatch, posts):

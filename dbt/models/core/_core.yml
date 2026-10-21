@@ -8,6 +8,7 @@ models:
     data_tests:
       # Each product's versions cover all dates, without gaps or overlaps.
       - dbt_utils.mutually_exclusive_ranges:
+          name: dim_products_versions_without_gaps_or_overlaps
           arguments:
             lower_bound_column: valid_from
             upper_bound_column: valid_to
@@ -27,6 +28,7 @@ models:
         data_tests:
           # One current version per product.
           - unique:
+              name: dim_products_one_current_version_per_product
               config:
                 where: is_current
       - name: product_name
@@ -111,6 +113,7 @@ models:
           - type: not_null
         data_tests:
           - relationships:
+              name: fct_transactions_product_key_in_dim_products
               arguments:
                 to: ref('dim_products')
                 field: product_key
@@ -121,6 +124,7 @@ models:
           - type: not_null
         data_tests:
           - dbt_utils.accepted_range:
+              name: fct_transactions_quantity_at_least_1
               arguments:
                 min_value: 1
       - name: unit_price
@@ -130,6 +134,7 @@ models:
           - type: not_null
         data_tests:
           - dbt_utils.accepted_range:
+              name: fct_transactions_unit_price_not_negative
               arguments:
                 min_value: 0
       - name: unit_tax
@@ -139,6 +144,7 @@ models:
           - type: not_null
         data_tests:
           - dbt_utils.accepted_range:
+              name: fct_transactions_unit_tax_not_negative
               arguments:
                 min_value: 0
       - name: net_amount
@@ -148,6 +154,7 @@ models:
           - type: not_null
         data_tests:
           - dbt_utils.accepted_range:
+              name: fct_transactions_net_amount_not_negative
               arguments:
                 min_value: 0
       - name: tax_amount
@@ -157,6 +164,7 @@ models:
           - type: not_null
         data_tests:
           - dbt_utils.accepted_range:
+              name: fct_transactions_tax_amount_not_negative
               arguments:
                 min_value: 0
       - name: gross_amount
@@ -166,6 +174,7 @@ models:
           - type: not_null
         data_tests:
           - dbt_utils.accepted_range:
+              name: fct_transactions_gross_amount_not_negative
               arguments:
                 min_value: 0
       - name: _load_id

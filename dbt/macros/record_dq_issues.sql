@@ -4,30 +4,26 @@
     staging model (dbt_project.yml), so each pipeline records the issues of its own
     loads when it builds its staging model, inside the same transaction.
 
+    Loads not recorded yet are those after the latest one in the summary, the same
+    watermark as the incremental models (macros/incremental_loads.sql): the filter on
+    _load_id reaches raw's index through the staging view, so only the new loads are
+    read and parsed, not all of raw. The issue counts are inserted first, while the
+    summary still has the previous watermark.
+
     The model must have the staging columns _load_id, dq_errors and dq_warnings.
 #}
 
 {% macro record_dq_issues(model) %}
 
-insert into audit.dq_load_summary
-    (load_id, model, total_rows, rows_with_errors, rows_with_warnings, error_rate)
-select
-    _load_id,
-    {{ sql_text_literal(model.identifier) }},
-    count(*),
-    count(*) filter (where cardinality(dq_errors) > 0),
-    count(*) filter (where cardinality(dq_warnings) > 0),
-    round(count(*) filter (where cardinality(dq_errors) > 0)::numeric / count(*), 4)
-from {{ model }}
-where _load_id not in (
-    select load_id from audit.dq_load_summary where model = {{ sql_text_literal(model.identifier) }}
-)
-group by _load_id;
+{%- set model_name = sql_text_literal(model.identifier) -%}
+{%- set recorded_up_to -%}
+    (select coalesce(max(load_id), 0) from audit.dq_load_summary where model = {{ model_name }})
+{%- endset -%}
 
 insert into audit.dq_issue_counts (load_id, model, kind, code, affected_rows)
 select
     staged._load_id,
-    {{ sql_text_literal(model.identifier) }},
+    {{ model_name }},
     issues.kind,
     issues.code,
     count(*)
@@ -37,9 +33,20 @@ cross join lateral (
     union all
     select 'warning' as kind, code from unnest(staged.dq_warnings) as code
 ) as issues
-where staged._load_id not in (
-    select load_id from audit.dq_issue_counts where model = {{ sql_text_literal(model.identifier) }}
-)
-group by staged._load_id, issues.kind, issues.code
+where staged._load_id > {{ recorded_up_to }}
+group by staged._load_id, issues.kind, issues.code;
+
+insert into audit.dq_load_summary
+    (load_id, model, total_rows, rows_with_errors, rows_with_warnings, error_rate)
+select
+    _load_id,
+    {{ model_name }},
+    count(*),
+    count(*) filter (where cardinality(dq_errors) > 0),
+    count(*) filter (where cardinality(dq_warnings) > 0),
+    round(count(*) filter (where cardinality(dq_errors) > 0)::numeric / count(*), 4)
+from {{ model }}
+where _load_id > {{ recorded_up_to }}
+group by _load_id
 
 {% endmacro %}

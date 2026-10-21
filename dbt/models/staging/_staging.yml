@@ -3,8 +3,15 @@ models:
     description: >
       Customer transactions from the raw layer, typed and cleaned. Every raw row is
       kept; values that cannot be used are null and listed in dq_errors.
+    # Tests on the model's rows only check recently loaded ones (_loaded_at, raw's
+    # partition key, so only recent partitions are read): older rows were tested when
+    # they were loaded, and staging is a view, so a test of every row would parse all
+    # of raw on every run. Seven days covers the loads of a pipeline that was blocked
+    # for a few days. A transaction_id repeated across older files still fails the
+    # fact's primary key.
     data_tests:
-      # Warns, not fails: rejected rows make core incomplete, not wrong.
+      # The newest load's error rate, from the data-quality history. Warns, not fails:
+      # rejected rows make core incomplete, not wrong.
       - max_error_rate:
           name: stg_customer_transactions_error_rate_within_limit
           arguments:
@@ -24,6 +31,7 @@ models:
       # Source freshness: staging keeps every row, rejected ones included, so this
       # tells whether the source still sends recent data. With the fact's own recency
       # test, a stale fact over a fresh staging means recent rows are being rejected.
+      # Without any load in the last seven days, it warns too.
       - dbt_utils.recency:
           name: stg_customer_transactions_is_recent
           arguments:
@@ -33,12 +41,17 @@ models:
             ignore_time_component: true
           config:
             severity: warn
+            where: &recent_loads "_loaded_at >= now() - interval '7 days'"
     columns:
       - name: transaction_id
         description: Identifier of the transaction. A 'T' prefix is removed.
         data_tests:
-          - not_null
-          - unique
+          - not_null:
+              config:
+                where: *recent_loads
+          - unique:
+              config:
+                where: *recent_loads
       - name: customer_id
         description: Identifier of the customer.
       - name: transaction_date
@@ -58,26 +71,38 @@ models:
           Codes of values repaired from a known alternative format, e.g.
           transaction_id_prefixed, transaction_date_dmy, product_id_prefixed.
         data_tests:
-          - not_null
+          - not_null:
+              config:
+                where: *recent_loads
       - name: dq_errors
         description: >
           Codes of values that are null because they were missing (<column>_missing)
           or could not be parsed (<column>_invalid).
         data_tests:
-          - not_null
+          - not_null:
+              config:
+                where: *recent_loads
       - name: _source_file
         description: "{{ doc('_source_file') }}"
         data_tests:
-          - not_null
+          - not_null:
+              config:
+                where: *recent_loads
       - name: _source_row
         description: "{{ doc('_source_row') }}"
         data_tests:
-          - not_null
+          - not_null:
+              config:
+                where: *recent_loads
       - name: _loaded_at
         description: "{{ doc('_loaded_at') }}"
         data_tests:
-          - not_null
+          - not_null:
+              config:
+                where: *recent_loads
       - name: _load_id
         description: "{{ doc('_load_id') }}"
         data_tests:
-          - not_null
+          - not_null:
+              config:
+                where: *recent_loads

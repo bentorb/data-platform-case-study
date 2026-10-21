@@ -175,12 +175,14 @@ def replace_file_rows(
     )
     replaced = cur.rowcount
     column_list = sql.SQL(", ").join(map(sql.Identifier, columns))
-    # now() is the transaction's start time, so all rows of a load share it.
+    # now() is the transaction's start time, so all rows of a load share it. No order
+    # by: each row keeps its position in the file (_source_row), and sorting a large
+    # file would only spill to disk.
     cur.execute(
         sql.SQL(
             "insert into {} ({}, _source_file, _source_row, _loaded_at, _load_id)"
             " select {}, %s::text, _source_row, now(), %s::bigint"
-            " from {} order by _source_row"
+            " from {}"
         ).format(target.identifier, column_list, column_list, INCOMING),
         (source_uri, load_id),
     )

@@ -12,6 +12,9 @@ x-airflow-common: &airflow-common
       lib: ./lib
       pipelines: ./pipelines
   image: data-platform-airflow:local
+  # Built here, never pulled: without this, Compose first tries to pull the image from
+  # a registry, and reports "pull access denied" before building it.
+  pull_policy: never
   environment: &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
@@ -86,6 +89,7 @@ x-airflow-common: &airflow-common
 x-landing-zone-job: &landing-zone-job
   build: ./landing-zone
   image: data-platform-landing-jobs:local
+  pull_policy: never
   environment:
     LANDING_ZONE_ENDPOINT_URL: http://landing-zone-storage:9000
     LANDING_ZONE_ACCESS_KEY: ${LANDING_ZONE_ACCESS_KEY:-rustfsadmin}
@@ -196,6 +200,7 @@ services:
       <<: *airflow-build
       target: test
     image: data-platform-airflow-test:local
+    pull_policy: never
     profiles: ["test"]
     # The Airflow services' settings, e.g. the warehouse connections the tests use.
     environment:
@@ -222,6 +227,7 @@ services:
       <<: *airflow-build
       target: test
     image: data-platform-airflow-test:local
+    pull_policy: never
     profiles: ["test"]
     entrypoint: ["bash", "tests/lint.sh"]
     working_dir: /work

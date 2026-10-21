@@ -77,11 +77,11 @@ From the host, with any PostgreSQL client (DBeaver, TablePlus, pgAdmin, `psql`):
 | Host | `localhost` |
 | Port | `5432` |
 | Database | `warehouse` |
-| User / password | see [Roles and users](docs/warehouse.md#roles-and-users) |
+| User / password | `admin` / `postgres`, or a service user such as `analytics_service` / `analytics`: see [Configuration](#configuration) for every default, and [Roles and users](docs/warehouse.md#roles-and-users) for what each can access |
 
 ## Smoke test
 
-The `warehouse_connection_check` DAG runs `select current_user, current_database(), version()` against the warehouse as `ingestion_service`. Trigger it from the UI to check that Airflow can reach the warehouse.
+The `warehouse_connection_check` DAG runs `select current_user, current_database(), version()` against the warehouse as `ingestion_service`. Like every DAG, it is paused when first created: switch it on, then trigger it from the UI, to check that Airflow can reach the warehouse. A run triggered while the DAG is paused waits, queued, until it is switched on.
 
 ## Tests
 
@@ -116,7 +116,11 @@ docker compose up -d --build
 
 `lib/`, `pipelines/`, `airflow/dags/` and `dbt/` are mounted into the Airflow containers, so changes to them apply without a rebuild.
 
-`down` and `down -v` do not remove built images; `docker compose down --rmi local` does.
+`down` and `down -v` do not remove built images. To remove them too, including the test image built by `lint` and `tests`:
+
+```bash
+docker compose --profile test down --rmi local
+```
 
 ## Configuration
 

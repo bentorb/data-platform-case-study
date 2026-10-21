@@ -15,9 +15,9 @@ How the platform keeps the cost of each run proportional to the data it receives
 
 | DAG file | Parse time | Tasks |
 |---|---|---|
-| `customer_transactions_pipeline.py` | 85 ms | 18 |
-| `platform_maintenance.py` | 65 ms | 2 |
-| `warehouse_connection_check.py` | 3 ms | 1 |
+| `customer_transactions_pipeline.py` | 77 ms | 19 |
+| `platform_maintenance.py` | 59 ms | 2 |
+| `warehouse_connection_check.py` | 2 ms | 1 |
 
 - **No external calls while parsing:** pipeline configs are local YAML files; connections, variables and the warehouse are only used inside tasks and callbacks.
 - **dbt is not run while parsing:** Cosmos discovers the models with `dbt ls` and caches the result in Airflow's metadata database, reused while the project is unchanged (0.015 s to load).
@@ -34,9 +34,9 @@ Measured with `python -X importtime -c "import airflow.sdk, cosmos; import lib.p
 
 | | |
 |---|---|
-| One pipeline run (18 tasks) | 27 s |
-| Each dbt task | 1.1–2.4 s |
-| dbt's own work per model or test | 0.01–0.08 s |
+| One pipeline run (19 tasks) | 24 s |
+| Each dbt task | 1.2–2.1 s |
+| dbt's own work per model or test | 0.02–0.07 s |
 
 Nearly all of a dbt task is starting a dbt process: importing dbt and connecting to the warehouse. Parsing the project is not part of it: each task reuses dbt's partial parse file, which Cosmos caches in `/tmp/cosmos` (the task log reports "Partial parse is enabled"). The start-up is the fixed price of one task per model, chosen so each model is visible, retried and alerted on its own (see [Platform framework](platform-framework.md#transformation-dbt-with-cosmos)).
 
